@@ -1,0 +1,488 @@
+/*
+ * main.css - Global styles for Mem Block 8.
+ *
+ * Design tokens (custom properties) live at the top of this file. Use the
+ * tokens rather than raw values so era themes (Stage 6) can override them
+ * in one place. Layout targets iPhone portrait first (safe-area insets, no
+ * scrolling) and scales up sensibly on desktop.
+ */
+
+:root {
+  /* --- Colour: surround (the dark DIM8 Labs frame around the playfield) --- */
+  --color-surround: #0a0b10;       /* also theme_color / background_color in the manifest */
+  --color-surround-raised: #14161f;
+
+  /* --- Colour: text --- */
+  --color-text: #d8dee9;
+  --color-text-dim: #6b7385;
+  --color-accent: #39ff9f;         /* phosphor green, used for "ready" lines */
+
+  /* --- Colour: playfield (vivid; themes will replace these) --- */
+  --color-well-bg: #10142a;
+  --color-well-border: #4f7cff;
+  --color-well-grid: rgba(79, 124, 255, 0.12);
+
+  /* --- Typography --- */
+  /* Bundled IBM Plex Mono (see @font-face below), system monospace as the fallback. */
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", "DejaVu Sans Mono", monospace;
+  --font-size-title: clamp(1.25rem, 5vw, 2rem);
+  --font-size-body: clamp(0.75rem, 3.2vw, 1rem);
+  --font-size-small: clamp(0.625rem, 2.6vw, 0.8rem);
+
+  /* --- Spacing --- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+
+  /* --- Board geometry (must match the engine: 12 columns x 22 rows) --- */
+  --board-cols: 12;
+  --board-rows: 22;
+  --well-border-width: 2px;
+
+  /* --- Touch targets: Apple's minimum comfortable tap size --- */
+  --tap-min: 44px;
+
+  /* --- Header: fits four HUD rows in binary mode (4 x 13px x 1.15) --- */
+  --header-height: 60px;
+}
+
+/*
+ * IBM Plex Mono, bundled in assets/fonts (SIL Open Font License; see
+ * CREDITS.md). Official Latin-1 subsets, with the unicode-range IBM ships
+ * for them. swap shows the fallback font at once and swaps when the font
+ * arrives; canvas text waits for it instead (js/render/fonts.js).
+ */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexMono-Regular-Latin1.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC,
+    U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A,
+    U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/IBMPlexMono-SemiBold-Latin1.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC,
+    U+2013-2014, U+2018-201A, U+201C-201E, U+2020-2022, U+2026, U+2030, U+2039-203A,
+    U+2044, U+20AC, U+2122, U+2212, U+FB01-FB02;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  /*
+   * Touch safety (see docs/ARCHITECTURE.md, "Touch rules"). Taps, double
+   * taps, swipes, and long presses are game gestures, so the browser must
+   * not zoom, select text, or show callouts. manipulation keeps normal
+   * panning for any non-game UI but removes double-tap zoom.
+   */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  /* Fixed full-viewport layout: a game screen should never scroll or bounce. */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--color-surround);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  -webkit-text-size-adjust: 100%;
+}
+
+/*
+ * The whole game container, and every element in it (canvas, overlay,
+ * header, HUD, margins), declares touch-action itself rather than relying
+ * on inheritance from a parent: touch-action is not an inherited property,
+ * and WebKit has not always intersected it with ancestors. manipulation is
+ * declared first as a fallback for engines that do not accept none.
+ * js/touch-guard.js adds touch-event cancelling on top of this.
+ */
+.app,
+.app * {
+  touch-action: manipulation;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Real controls (pause button, pause menu, later settings) opt back in; see js/touch-guard.js. */
+.app [data-native-touch],
+.app [data-native-touch] *,
+.app button,
+.app a[href],
+.app input,
+.app select,
+.app textarea,
+.app label {
+  touch-action: manipulation;
+}
+
+.app {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  /* Keep content clear of the notch, Dynamic Island, and home indicator. */
+  padding:
+    calc(env(safe-area-inset-top) + var(--space-2))
+    calc(env(safe-area-inset-right) + var(--space-2))
+    calc(env(safe-area-inset-bottom) + var(--space-2))
+    calc(env(safe-area-inset-left) + var(--space-2));
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Header: the register-dump HUD, then the pause button on the right. It
+ * lives at the top, away from the bottom soft-drop strip where thumbs rest.
+ * Its height is fixed (four binary rows) so switching number modes never
+ * resizes the playfield. It is a size container so the HUD can fit its
+ * font to the header width (cqw).
+ */
+.app-header {
+  flex: none;
+  width: 100%;
+  max-width: 34rem;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  container-type: inline-size;
+}
+
+/*
+ * Register-dump HUD (js/ui/hud.js). A native button: tap to cycle hex ->
+ * binary -> decimal. Hex and decimal use a 2 x 2 grid; binary stacks one
+ * register per row. The font size is the largest that fits the longest row
+ * (--hud-chars characters, set from JS; a monospace character is about
+ * 0.6em, 0.62 leaves a margin for fallback fonts), capped per mode, so the
+ * HUD can never overflow at any phone width, even when a register widens.
+ */
+.hud {
+  --hud-chars: 26;
+  --hud-max: 16px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: min(var(--hud-max), calc((100cqw - var(--tap-min) - var(--space-2) - 4px) / (var(--hud-chars) * 0.62)));
+  line-height: 1.2;
+  text-align: left;
+  white-space: pre;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: 2ch; /* COLUMN_GAP_CHARS in js/ui/hud.js */
+  align-content: center;
+  cursor: pointer;
+}
+
+.hud[data-mode="bin"] {
+  --hud-max: 13px;
+  grid-template-columns: max-content;
+  line-height: 1.15;
+}
+
+.reg-label {
+  opacity: 0.6;
+}
+
+/* A changed value glows briefly, like a VFD segment flaring (js/ui/hud.js alternates a/b). */
+.reg-value.glow-a {
+  animation: reg-glow-a 200ms ease-out;
+}
+
+.reg-value.glow-b {
+  animation: reg-glow-b 200ms ease-out;
+}
+
+@keyframes reg-glow-a {
+  from { color: #e6fff2; text-shadow: 0 0 0.35em rgba(57, 255, 159, 0.9); }
+  to { color: var(--color-accent); text-shadow: 0 0 0 rgba(57, 255, 159, 0); }
+}
+
+@keyframes reg-glow-b {
+  from { color: #e6fff2; text-shadow: 0 0 0.35em rgba(57, 255, 159, 0.9); }
+  to { color: var(--color-accent); text-shadow: 0 0 0 rgba(57, 255, 159, 0); }
+}
+
+/* Pause button: at least 44 x 44 CSS px, with a pause icon drawn in CSS. */
+.pause-button {
+  flex: none;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-accent);
+  cursor: pointer;
+}
+
+.pause-icon {
+  width: 14px;
+  height: 16px;
+  border-left: 5px solid currentColor;
+  border-right: 5px solid currentColor;
+}
+
+.hud:focus-visible,
+.pause-button:focus-visible,
+.menu-button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * The well takes the remaining vertical space and is a size container, so
+ * the inner rectangle can be the largest 12:22 box that fits using
+ * container query units (cqw/cqh): width is limited by either the
+ * container's width or its height scaled by 12/22, whichever is smaller.
+ *
+ * .well is also the touch surface: touches beside or below the playfield
+ * still count, which gives thumbs a larger target. Its touch-action comes
+ * from the .app rules above.
+ */
+.well {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.well-inner {
+  position: relative;
+  width: min(100cqw, 100cqh * var(--board-cols) / var(--board-rows));
+  aspect-ratio: var(--board-cols) / var(--board-rows);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--well-border-width) solid var(--color-well-border);
+  border-radius: 4px;
+  /* The canvas draws the grid; this colour fills any sub-pixel leftover. */
+  background-color: var(--color-well-bg);
+  box-shadow: 0 0 24px rgba(79, 124, 255, 0.25);
+  overflow: hidden;
+}
+
+/* Canvas size is set from JS in whole device pixels (js/render/layout.js). */
+.playfield {
+  display: block;
+}
+
+/* Start, pause menu, bank transition, and game-over screens, drawn over the canvas. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: rgba(10, 11, 16, 0.55);
+  text-align: center;
+  pointer-events: none; /* input is handled by .well */
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+/* Pause menu buttons are the overlay's only clickable parts. */
+.menu-button {
+  pointer-events: auto;
+  min-width: 12em;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
+  background: rgba(10, 11, 16, 0.9);
+  color: var(--color-accent);
+  font: inherit;
+  font-size: var(--font-size-body);
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+
+.menu-button[data-command="restart"] {
+  color: var(--color-text);
+  border-color: var(--color-text-dim);
+}
+
+/* Transition lines that appear after a delay (set inline from JS). */
+.appear {
+  opacity: 0;
+  animation: appear 1ms linear forwards;
+}
+
+@keyframes appear {
+  to { opacity: 1; }
+}
+
+/* FULL WORD: a brief label over the playfield (js/ui/banner.js sets the duration). */
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  margin: 0;
+  padding: 0.2em 0.6em;
+  transform: translate(-50%, -50%);
+  background: rgba(10, 11, 16, 0.85);
+  color: var(--color-accent);
+  font-size: var(--font-size-title);
+  letter-spacing: 0.15em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+.banner.show {
+  animation-name: banner;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes banner {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/*
+ * Each line gets its own dark backing so it stays readable over blocks.
+ * Lines never wrap, so a number is never split; a line longer than the
+ * playfield (a binary score on a narrow phone) gets a smaller font instead.
+ * --chars is the line's length, set by js/ui/screens.js; a monospace
+ * character is about 0.6em (0.62 leaves a margin), and 1.2em of padding is
+ * allowed for. --line-size is the line's normal size.
+ */
+.overlay {
+  container-type: inline-size;
+}
+
+.overlay > p {
+  padding: 0.15em 0.5em;
+  background: rgba(10, 11, 16, 0.85);
+  white-space: nowrap;
+  font-size: min(var(--line-size), calc((100cqw - 2 * var(--space-3)) / (var(--chars, 1) * 0.62 + 1.2)));
+}
+
+.screen-title {
+  --line-size: var(--font-size-title);
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.boot-line {
+  --line-size: var(--font-size-body);
+  margin: 0;
+  color: var(--color-accent);
+  font-size: var(--font-size-body);
+  text-align: center;
+}
+
+.boot-detail {
+  --line-size: var(--font-size-small);
+  margin: 0;
+  color: var(--color-text-dim);
+  font-size: var(--font-size-small);
+  text-align: center;
+}
+
+/* Desktop-only hints ("PRESS ENTER") appear only with a mouse or trackpad. */
+.desktop-only {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .desktop-only {
+    display: block;
+  }
+}
+
+.cursor {
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+}
+
+/* ?debug=1 gesture log (js/ui/debug.js). */
+.debug-log {
+  position: fixed;
+  left: calc(env(safe-area-inset-left) + var(--space-1));
+  bottom: calc(env(safe-area-inset-bottom) + var(--space-1));
+  max-width: 90vw;
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--color-accent);
+  background: rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 10;
+  white-space: pre;
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Mem Block 8",
+  "short_name": "MemBlock8",
+  "description": "An offline falling-block memory game from DIM8 Labs.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0b10",
+  "theme_color": "#0a0b10",
+  "icons": [
+    {
+      "src": "assets/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

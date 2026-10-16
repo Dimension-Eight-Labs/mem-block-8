@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- icon.svg - Placeholder app icon for Mem Block 8 (Stage 0). Proper PNG icons come in Stage 7. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0a0b10"/>
+  <rect x="96" y="96" width="320" height="320" rx="16" fill="none" stroke="#4f7cff" stroke-width="16"/>
+  <rect x="136" y="296" width="80" height="80" fill="#ff4fa3"/>
+  <rect x="216" y="296" width="80" height="80" fill="#ffd23f"/>
+  <rect x="216" y="216" width="80" height="80" fill="#39ff9f"/>
+  <rect x="296" y="296" width="80" height="80" fill="#4fd6ff"/>
+  <text x="256" y="176" font-family="monospace" font-size="72" font-weight="700" fill="#d8dee9" text-anchor="middle">0x8</text>
+</svg>

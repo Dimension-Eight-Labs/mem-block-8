@@ -1,0 +1,81 @@
+<!doctype html>
+<!--
+  index.html - App shell for Mem Block 8.
+  The playfield box keeps the 12:22 aspect ratio and holds the game
+  canvas plus DOM overlays: the screens (start, pause menu, bank
+  transition, game over) and the FULL WORD banner. The header holds the
+  register-dump HUD and the pause button, outside the playfield's touch
+  surface and away from the bottom soft-drop strip.
+  The start screen is in the markup so it shows before any JS runs.
+  All paths are relative so the app works both at the server root
+  locally and under /mem-block-8/ on GitHub Pages.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <!--
+    maximum-scale=1 asks the browser not to zoom. iOS WebKit may ignore it
+    (accessibility setting), so the real protection is the touch-action
+    rules in css/main.css and the touch/gesture listeners in
+    js/touch-guard.js. See docs/ARCHITECTURE.md, "Touch rules".
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#0a0b10">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Mem Block 8 - an offline falling-block memory game from DIM8 Labs.">
+
+  <!-- iPhone home screen install -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MemBlock8">
+  <!-- iOS ignores SVG touch icons; a PNG apple-touch-icon arrives in Stage 7. -->
+  <link rel="apple-touch-icon" href="assets/icons/icon.svg">
+
+  <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <!--
+    Preload the main font weight so it is usually ready before first paint.
+    crossorigin is required for font preloads, even from the same origin.
+  -->
+  <link rel="preload" href="assets/fonts/IBMPlexMono-Regular-Latin1.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/main.css">
+
+  <title>Mem Block 8</title>
+</head>
+<body>
+  <main class="app" id="app">
+    <!-- The title is shown on the start screen; the header holds the HUD. -->
+    <h1 class="visually-hidden">Mem Block 8</h1>
+    <header class="app-header">
+      <!--
+        The register-dump HUD (js/ui/hud.js fills it in). Both are native
+        buttons, so js/touch-guard.js leaves their touches alone. Tapping the
+        HUD cycles hex / binary / decimal.
+      -->
+      <button type="button" class="hud" id="hud" aria-label="Registers. Tap to change number format."></button>
+      <button type="button" class="pause-button" id="pause-button" aria-label="Pause" disabled style="visibility: hidden">
+        <span class="pause-icon" aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <section class="well" id="game-area" aria-label="Playfield (12 by 22)">
+      <div class="well-inner" id="playfield-box">
+        <canvas class="playfield" id="playfield" aria-hidden="true"></canvas>
+        <div class="overlay" id="overlay" aria-live="polite">
+          <p class="screen-title">MEM BLOCK 8</p>
+          <p class="boot-detail">DIM8 LABS</p>
+          <p class="boot-line">MEMORY BANK READY<span class="cursor" aria-hidden="true">_</span></p>
+          <p class="boot-detail">12 x 22 CELLS</p>
+          <p class="boot-detail">0x0108 WORDS</p>
+          <p class="boot-line">TAP TO START</p>
+          <p class="boot-line desktop-only">PRESS ENTER</p>
+        </div>
+        <p class="banner" id="banner" aria-live="polite" hidden></p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

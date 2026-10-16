@@ -1,0 +1,22 @@
+# .gitignore - Files that should never be committed to Mem Block 8.
+
+# Node (only used for running tests; there are no dependencies)
+node_modules/
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local scratch
+*.log
+.env
+assets/music/originals/
