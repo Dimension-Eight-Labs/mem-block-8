@@ -22,6 +22,12 @@ export const HIGH_SCORE_KEY = 'highScore';
 /** Key (after the prefix) holding the number display mode ('hex', 'bin', 'dec'). */
 export const NUMBER_MODE_KEY = 'numberMode';
 
+/** Key (after the prefix) holding the music setting ('on', 'off'). */
+export const MUSIC_KEY = 'music';
+
+/** Key (after the prefix) holding the sound effects setting ('on', 'off'). */
+export const SOUND_FX_KEY = 'soundFx';
+
 /**
  * @typedef {object} Storage
  * @property {(key: string) => string | null} getItem Raw string, or null if absent or unavailable.

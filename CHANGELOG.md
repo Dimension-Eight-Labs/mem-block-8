@@ -4,6 +4,159 @@
 Every stage, and every significant change between stages, adds an entry
 here (see CONTRIBUTING.md).
 
+## Playtest pass 1 - wording, READY moment, microchips, reward sounds, music trim
+
+Version 0.5.1 (`CACHE_VERSION` `v0.5.1`, `MUSIC_CACHE_VERSION` `v2`).
+
+### Changed and built
+
+- **Wording.** Player-facing text always says "MEMORY BANK", never "BANK"
+  alone (it read as online banking). The transition is now "MEMORY BANK
+  0x01 FULL" / "SWAPPING TO MEMORY BANK 0x02..." / "MEMORY BANK 0x02
+  READY"; game over shows "MEMORY BANK 0x03". The HUD label BNK stays.
+  README how-to-play rewritten to match. Tests check every screen line in
+  every mode and the README section.
+- **Longer modem handshake** (`js/audio/modem.js`): 0.96 s -> 2.7 s in four
+  parts, carrier exchange (0.5 s), scrambled data (1.2 s, drifting
+  warble under shifting noise bursts), training hiss (0.7 s), settle hush
+  (0.3 s). Dial tone, DTMF 3-4-6-8, ringback, and answer tone unchanged.
+  Whole call 5.275 s.
+- **READY moment.** Every transition ends with "MEMORY BANK .. READY" for
+  900 ms. Sound on: READY at 5575 ms (the modem's end), 6475 ms in all
+  (was 4136 ms). Sound off: 4000 ms with READY at 3100 ms (was 2500 ms).
+  Skip (still after 750 ms) hangs up, jumps to READY with the tally
+  complete, plays only the done tone, and resumes 600 ms later.
+  `transitionTiming(modemOn, { silentMs, readyMs })` replaces
+  `transitionDurationMs`; timings in `SCREENS`.
+- **Microchips** (`js/progression/chips.js`, `progress.js`): 2/3/4/5-row
+  clears earn 1/2/3/5 chips, held through the bank (including the
+  completing clear), cashed in at bank complete for chips x `0x100` x the
+  bank completed, reset, and lost at game over. Events `chipsEarned`,
+  `chipsCashed`, `chipsLost`; `scoreChanged` reason `'chips'`.
+- **Chip display:** a microchip icon drawn in code (`js/render/chip.js`)
+  with "+0x03 CHIPS" at the cleared rows, rising and fading over 1 s, below
+  the FULL WORD banner on a 5-row clear (`js/ui/chip-flash.js`); a `CHP`
+  register in the HUD; the READY tally "CHIPS 0x03 = +0x0600" counting up
+  (`js/ui/tally.js`; the HUD's SCR counts up with it); "CHIPS LOST 0x02"
+  on game over.
+- **HUD:** hex and decimal in three rows (SCR HI / BNK LNS / CHP), binary
+  in five; header 60 -> 64 px, fixed in every mode; binary text capped at
+  11 px on 12 px lines (was 13 px). Glow only when a value goes up.
+- **Reward sounds** (`EFFECTS` in `js/audio/sfx.js`): chips earned, a
+  square-wave arpeggio up from C5, one note per chip; on a FULL WORD the
+  full two-octave run to C7, replacing the separate FULL WORD sound. Cash-in
+  tally: a blip per step (one per chip, at most 8, 60 ms apart), then a
+  two-note done tone, only after the modem.
+- **Iced Village** cut to a 2:24.000 loop (48 bars at 80 BPM) with a
+  20 ms wrap crossfade by `scripts/convert-music.sh` (which can now
+  rebuild single tracks): 6,990,410 -> 2,305,087 bytes; decoded about 51 MB
+  at 44.1 kHz (55 MB at 48 kHz) instead of about 150 MB. Music total
+  12,205,959 bytes. Originals unchanged.
+- Tests: 285 (was 259): chips table, accumulation, bank-completing clear,
+  cash-in math, reset, loss, events; handshake parts and lengths; timing on
+  and off; skip with cash-in; tally count-up and rate limit; reward sounds;
+  CHP formatting; wording; and the audio façade against a fake
+  AudioContext (`tests/audio-facade.test.js`).
+
+### Decisions
+
+- Iced Village cut at 2:24.000 (bar 48, the end of the main section's
+  8-bar phrase): the loop then falls back into the filtered intro, as the
+  track itself drops into its filtered breakdown at 1:36.
+- READY keeps the earlier lines on screen (a terminal log) and moves the
+  cursor to the READY line.
+- Taps during READY are ignored (it is under a second); pause still works.
+- The tally points use a 16-bit `cashIn` register (`+0x0600`) so the number
+  stays fixed-width like every other.
+- The FULL WORD event is silent; its flourish lives in the chips sound.
+- A cash-in is not announced by the `CHP` register glowing; it drops to 0
+  at READY without a glow (glow now only on increases, for every register).
+- Music cache bumped to v2 (the file name stayed the same).
+
+### Open items
+
+- iPhone: the reward sounds and longer handshake, the Iced Village wrap,
+  binary HUD readability at 11 px, and binary transition lines at 320 px
+  (7-8 px to stay on one line).
+- Tune the chips table, `CHIP_VALUE`, and the 6.5 s transition.
+
+## Stage 5 - Audio and the settings screen
+
+Version 0.5.0 (`CACHE_VERSION` `v0.5.0`).
+
+### Built
+
+- **Music assets.** Seven tracks from OpenGameArt.org, each CC0 as read
+  from its license screenshot in `docs/licenses/music/`, credited in
+  CREDITS.md. Converted by the new `scripts/convert-music.sh` (ffmpeg):
+  silence trimmed at -60 dBFS, MP3 128 kbps, 44.1 kHz, mono only for the
+  two mono sources; 16,891,282 bytes in all. Originals untouched.
+- **Audio engine** (`js/audio/`): pure modules (`schedule.js`, `modem.js`,
+  `sfx.js`, `music.js`) and a thin Web Audio layer (`context.js`,
+  `synth.js`, `player.js`), joined by `index.js`. All sound is driven by
+  the session's single event hook.
+- **Modem dial-in** on bank complete: dial tone, DTMF 3-4-6-8 ("DIM8"),
+  ringback, 2100 Hz answer tone, 1200/2400 bps style handshake; 3.535 s,
+  after the music fades. Skipping hangs up with a click.
+- **Effects:** lock click, faint rotation tick, line clear chirp (rising
+  with the line count), FULL WORD arpeggio, busy signal on game over. One
+  tuning table (`EFFECTS`).
+- **Game over** shows "NO CARRIER" above "MEMORY FULL".
+- **Music:** gameplay only; one track per bank, cycling; pauses and resumes
+  in place; fades out before the modem; gapless loops from decoded buffers
+  with sample-exact loop points (MP3 padding handled); at most two tracks
+  decoded at a time.
+- **Bank transition length:** the modem's length plus a margin (4136 ms)
+  with sound effects on; 2500 ms with them off. Skip rule unchanged.
+- **iOS:** audio starts only from a user gesture; `navigator.audioSession`
+  type `'ambient'` where available (silent switch respected, mixes with
+  other audio); suspended while the page is hidden.
+- **Settings screen** from SETTINGS buttons on the start screen and the
+  pause menu: MUSIC, SOUND FX, NUMBER FORMAT (shared with the HUD tap),
+  BACK. Built from a table of rows (`js/ui/settings.js`) over a generic
+  choice state (`js/ui/choice.js`); saved as `mem-block-8:music`,
+  `:soundFx`, `:numberMode`. The game stays paused while it is open.
+- **Session hook events:** `screen` (every screen change), `newGame`,
+  `rotated` (successful rotations only), alongside the engine and
+  progression events. The engine is unchanged.
+- **Caching:** new modules and the first track in `APP_SHELL`; other
+  tracks cached on first use in a separate `mem-block-8-music-v1` cache
+  that survives app updates. `scripts/serve.py` serves `.mp3` as
+  `audio/mpeg`.
+- Tests: DTMF table, modem schedule (order, digits, no overlapping tones,
+  length), effect table coverage, playlist and cycling, loop points, the
+  memory rule, the transition length rule, settings persistence (including
+  storage that throws) and HUD sync, the settings flow in the session, the
+  new hook events, and the music player against a fake AudioContext
+  (259 tests total).
+
+### Decisions
+
+- Iced Village is offered as CC-BY 4.0 **or** CC0 on its page; used under
+  CC0 (author credited anyway).
+- Playlist order puts a short track first (it is cached at install) and the
+  7-minute track last (largest decoded size).
+- The audio context is unlocked by any touch, click, or key press (capture
+  phase), not only the start tap, which also covers settings toggles and
+  RESUME; with both settings off no context is created at all.
+- The rotation tick comes from a session `rotated` event instead of a new
+  engine event, so the engine is unchanged.
+- The transition length uses the sound effects setting and whether audio
+  is actually available (so a browser without Web Audio keeps 2.5 s).
+- The decoded buffer's length decides the loop points: equal to the known
+  length means the browser trimmed the padding; longer means it did not and
+  the 1105 priming samples are skipped. Both verified to be sample-exact.
+- Music cache separate from the app shell cache, so updates do not
+  re-download 15 MB of music.
+- Turning SOUND FX on plays a click as confirmation; turning MUSIC off
+  frees the decoded tracks.
+
+### Open items
+
+- iPhone testing: audio unlock, silent switch, gapless loops on WebKit,
+  memory with the 7-minute track, modem sound, mix levels.
+- Effect and music volumes are first-pass.
+
 ## Stage 4 - Register-dump HUD, bundled font, Stage 3 fixes
 
 Version 0.4.0 (`CACHE_VERSION` `v0.4.0`).

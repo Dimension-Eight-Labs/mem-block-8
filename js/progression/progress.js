@@ -9,18 +9,32 @@
  *
  * Lines beyond a bank's linesToComplete carry over into the next bank,
  * so no cleared line is ever lost.
+ *
+ * Microchips (table in chips.js): multi-row clears earn chips, which pile
+ * up during the bank, including from the clear that completes it. When
+ * the bank completes they are cashed in at once (the score changes then;
+ * the transition's tally only animates it) and the count resets. Game
+ * over before that loses them.
  */
 
 import { getBank } from './banks.js';
 import { lineClearPoints, dropPoints, isFullWord } from './scoring.js';
+import { chipsForClear, cashInPoints } from './chips.js';
 
 /**
- * @typedef {{type: 'scoreChanged', score: number, points: number, reason: 'lines' | 'drop'}
+ * @typedef {{type: 'scoreChanged', score: number, points: number, reason: 'lines' | 'drop' | 'chips'}
  *   | {type: 'fullWord', bank: number}
+ *   | {type: 'chipsEarned', count: number, total: number, fullWord: boolean}
+ *   | {type: 'chipsCashed', count: number, points: number, bank: number}
+ *   | {type: 'chipsLost', count: number}
  *   | {type: 'bankComplete', fromBank: number, toBank: number,
  *      weights: Readonly<Record<string, number>>, gravityMsPerRow: number}} ProgressEvent
- * fullWord's bank is the bank the clear happened in. bankComplete carries
- * the new bank's settings for the session to apply.
+ * fullWord's bank is the bank the clear happened in. chipsEarned: count
+ * from this clear, total held now, and whether the clear was a FULL WORD
+ * (sound combines the two rewards). chipsCashed comes just before the
+ * bankComplete it belongs to; bank is the bank completed. chipsLost comes
+ * with game over. bankComplete carries the new bank's settings for the
+ * session to apply.
  */
 
 /**
@@ -30,6 +44,7 @@ import { lineClearPoints, dropPoints, isFullWord } from './scoring.js';
  * @property {number} totalLines All lines cleared this game.
  * @property {number} bankLines Lines in the current bank so far.
  * @property {number} linesToComplete Lines that fill the current bank.
+ * @property {number} chips Microchips held in the current bank (not yet cashed in).
  */
 
 /**
@@ -51,11 +66,12 @@ export function createProgress({ banks = getBank } = {}) {
   let score = 0;
   let totalLines = 0;
   let bankLines = 0;
+  let chips = 0;
   let settings = banks(1);
 
   /**
    * @param {number} points
-   * @param {'lines' | 'drop'} reason
+   * @param {'lines' | 'drop' | 'chips'} reason
    * @param {ProgressEvent[]} out
    */
   function addPoints(points, reason, out) {
@@ -70,13 +86,25 @@ export function createProgress({ banks = getBank } = {}) {
    */
   function onLinesCleared(count, out) {
     addPoints(lineClearPoints(count, settings.bank), 'lines', out);
-    if (isFullWord(count)) out.push({ type: 'fullWord', bank: settings.bank });
+    const fullWord = isFullWord(count);
+    if (fullWord) out.push({ type: 'fullWord', bank: settings.bank });
+    const earned = chipsForClear(count);
+    if (earned > 0) {
+      chips += earned;
+      out.push({ type: 'chipsEarned', count: earned, total: chips, fullWord });
+    }
     totalLines += count;
     bankLines += count;
     // A loop, so a table with very short banks can never skip one silently.
     while (bankLines >= settings.linesToComplete) {
       bankLines -= settings.linesToComplete;
       const fromBank = settings.bank;
+      if (chips > 0) {
+        const points = cashInPoints(chips, fromBank);
+        out.push({ type: 'chipsCashed', count: chips, points, bank: fromBank });
+        addPoints(points, 'chips', out);
+        chips = 0;
+      }
       settings = banks(fromBank + 1);
       out.push({
         type: 'bankComplete',
@@ -95,6 +123,9 @@ export function createProgress({ banks = getBank } = {}) {
       addPoints(dropPoints(event), 'drop', out);
     } else if (event.type === 'linesCleared') {
       onLinesCleared(event.count, out);
+    } else if (event.type === 'gameOver' && chips > 0) {
+      out.push({ type: 'chipsLost', count: chips });
+      chips = 0;
     }
     return out;
   }
@@ -106,6 +137,7 @@ export function createProgress({ banks = getBank } = {}) {
       totalLines,
       bankLines,
       linesToComplete: settings.linesToComplete,
+      chips,
     });
   }
 

@@ -32,15 +32,20 @@ export const DEFAULT_NUMBER_MODE = 'hex';
 
 /**
  * THE width table: every field's register size and digit counts per mode.
- * @type {Readonly<Record<'score' | 'highScore' | 'bank' | 'lines' | 'words', Readonly<RegisterFormat>>>}
+ * @type {Readonly<Record<'score' | 'highScore' | 'bank' | 'lines' | 'chips' | 'words' | 'cashIn', Readonly<RegisterFormat>>>}
  */
 export const REGISTERS = Object.freeze({
   score: Object.freeze({ label: 'SCR', bits: 24, hex: 6, bin: 24, dec: 8 }),
   highScore: Object.freeze({ label: 'HI', bits: 24, hex: 6, bin: 24, dec: 8 }),
   bank: Object.freeze({ label: 'BNK', bits: 8, hex: 2, bin: 8, dec: 3 }),
   lines: Object.freeze({ label: 'LNS', bits: 16, hex: 4, bin: 16, dec: 5 }),
+  // Microchips held in the current memory bank.
+  chips: Object.freeze({ label: 'CHP', bits: 8, hex: 2, bin: 8, dec: 3 }),
   // The well's capacity on the start screen (12 x 22 = 264 cells).
   words: Object.freeze({ label: 'WRD', bits: 16, hex: 4, bin: 16, dec: 5 }),
+  // A chip cash-in, on the transition's tally line (not in the HUD). 16 bits
+  // hold any cash-in up to bank 25 even with 10 chips; beyond, it widens.
+  cashIn: Object.freeze({ label: 'PTS', bits: 16, hex: 4, bin: 16, dec: 5 }),
 });
 
 /** Prefix per mode. Decimal has none. */

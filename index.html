@@ -2,8 +2,9 @@
 <!--
   index.html - App shell for Mem Block 8.
   The playfield box keeps the 12:22 aspect ratio and holds the game
-  canvas plus DOM overlays: the screens (start, pause menu, bank
-  transition, game over) and the FULL WORD banner. The header holds the
+  canvas plus DOM overlays: the screens (start, pause menu, settings,
+  memory bank transition, game over), the FULL WORD banner, and the
+  "+3 CHIPS" flash. The header holds the
   register-dump HUD and the pause button, outside the playfield's touch
   surface and away from the bottom soft-drop strip.
   The start screen is in the markup so it shows before any JS runs.
@@ -70,8 +71,10 @@
           <p class="boot-detail">0x0108 WORDS</p>
           <p class="boot-line">TAP TO START</p>
           <p class="boot-line desktop-only">PRESS ENTER</p>
+          <button type="button" class="menu-button" data-command="settings">SETTINGS</button>
         </div>
         <p class="banner" id="banner" aria-live="polite" hidden></p>
+        <p class="chip-flash" id="chip-flash" aria-live="polite" hidden></p>
       </div>
     </section>
   </main>

@@ -17,10 +17,17 @@
   high score.
 - [x] **4 - Register-dump HUD** with the hex / binary / decimal cycle,
   bundled IBM Plex Mono, new piece mix immediately on a bank change.
-- [ ] **5 - Audio and settings screen.** Synthesized modem sequence (on the
-  bank transition, matched to its length), sound effects, music player,
-  and the settings screen with the music and sound effect toggles
-  (reached from the pause menu).
+- [x] **5 - Audio and settings screen.** Synthesized modem dial-in (the
+  bank transition matches its length), synthesized sound effects, CC0
+  music with gapless loops and a per-bank playlist, and the settings
+  screen (music, sound effects, number format) from the start screen and
+  the pause menu.
+- [x] **Playtest pass 1 (0.5.1).** "MEMORY BANK" wording everywhere (no
+  "BANK" alone), a longer modem handshake in four parts with a READY moment
+  at the end of every bank transition (sound on or off), microchip bonuses
+  (earned by multi-row clears, cashed in at bank complete, lost at game
+  over) with a chip flash, a CHP register, a cash-in tally, and reward
+  sounds, and Iced Village cut to a 2:24 loop.
 - [ ] **6 - Era themes and DIM8 branding.** Era themes (with their own bank
   tints) and logo options, added to the settings screen.
 - [ ] **7 - PWA polish.** Offline caching (including music), icons, iPhone
@@ -50,6 +57,21 @@
 - **Logo placement.** `'bottom'` (default) vs `'center'`, after phone testing.
 - **Bank tuning.** The bank table, gravity curve, and transition timings
   are first-pass; tune after playtesting.
+- **Audio on a real iPhone.** Gesture unlock, silent switch ("ambient"
+  audio session), gapless loops (does WebKit trim the MP3 padding, or does
+  the fallback loop point kick in? and the Iced Village wrap), memory, the
+  modem's longer handshake, and the reward sounds. Effect volumes and the
+  music level are first-pass (`EFFECTS` in `js/audio/sfx.js`, `MIX` in
+  `js/audio/context.js`).
+- **Microchip tuning.** The chips table and `CHIP_VALUE`
+  (`js/progression/chips.js`) and the tally and READY timings (`SCREENS`)
+  are first-pass.
+- **Transition length.** 6.5 s with sound on (the modem plus READY) and
+  4 s with it off; tune after playtesting (skip is allowed after 0.75 s).
+- **Binary HUD size.** Binary now caps at 11 px (was 13 px) to fit five
+  rows in a 64 px header; check readability on a phone.
+- **Music file size.** The seven tracks total 12.2 MB; only the first
+  (1.3 MB) is cached at install.
 
 ### Closed
 

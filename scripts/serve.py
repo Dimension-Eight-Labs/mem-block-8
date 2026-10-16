@@ -14,8 +14,8 @@ HTTP on a LAN address the service worker does not register at all, so it
 cannot serve stale files here either.
 
 It also sets explicit MIME types for .js (module scripts are rejected
-without a JavaScript type), .webmanifest, and .woff2 (fonts), since the system MIME table
-does not always have them.
+without a JavaScript type), .webmanifest, .woff2 (fonts), and .mp3
+(music), since the system MIME table does not always have them.
 
 Usage (from anywhere):
     python3 scripts/serve.py          # port 8088
@@ -44,6 +44,7 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         '.webmanifest': 'application/manifest+json',
         '.svg': 'image/svg+xml',
         '.woff2': 'font/woff2',
+        '.mp3': 'audio/mpeg',
     }
 
     def end_headers(self):

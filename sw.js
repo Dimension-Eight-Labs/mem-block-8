@@ -4,8 +4,18 @@
  * Lives at the project root so its scope covers the whole app.
  * Strategy: cache-first for the app shell. On install, every file in
  * APP_SHELL is pre-cached; on fetch, a cached copy is served if present,
- * otherwise the network is used. Music caching (first track at install,
- * others on demand) is added in Stages 5 and 7.
+ * otherwise the network is used.
+ *
+ * Music: the first track (bank 1) is in APP_SHELL, so it is there offline
+ * from the first visit. The other tracks are large (up to 4 MB), so they
+ * are fetched the first time a bank needs them and then kept in a separate
+ * music cache (MUSIC_CACHE), served cache-first from then on. That cache
+ * is not tied to CACHE_VERSION, so an app update does not throw away and
+ * re-download every track. If a track cannot be fetched (offline, not yet
+ * cached) the game just plays that bank without music.
+ *
+ * Replacing a track's audio under the SAME file name: bump
+ * MUSIC_CACHE_VERSION too, or installed players keep the old recording.
  *
  * ---------------------------------------------------------------------
  * WHEN AND HOW TO BUMP CACHE_VERSION
@@ -41,8 +51,16 @@
  *   - Or bump CACHE_VERSION locally.
  */
 
-const CACHE_VERSION = 'v0.4.0';
+const CACHE_VERSION = 'v0.5.1';
 const CACHE_NAME = `mem-block-8-${CACHE_VERSION}`;
+
+/**
+ * Runtime cache for music tracks (see above). v2: iced-village.mp3 was cut
+ * to a loop under the same name (0.5.1); activating drops the v1 cache.
+ */
+const MUSIC_CACHE_VERSION = 'v2';
+const MUSIC_CACHE = `mem-block-8-music-${MUSIC_CACHE_VERSION}`;
+const MUSIC_PATH = '/assets/music/';
 
 /** Files needed to boot offline. Paths are relative to this file's location. */
 const APP_SHELL = [
@@ -50,7 +68,14 @@ const APP_SHELL = [
   './index.html',
   './manifest.webmanifest',
   './css/main.css',
+  './js/audio/context.js',
   './js/audio/index.js',
+  './js/audio/modem.js',
+  './js/audio/music.js',
+  './js/audio/player.js',
+  './js/audio/schedule.js',
+  './js/audio/sfx.js',
+  './js/audio/synth.js',
   './js/engine/board.js',
   './js/engine/config.js',
   './js/engine/constants.js',
@@ -69,9 +94,11 @@ const APP_SHELL = [
   './js/loop.js',
   './js/main.js',
   './js/progression/banks.js',
+  './js/progression/chips.js',
   './js/progression/index.js',
   './js/progression/progress.js',
   './js/progression/scoring.js',
+  './js/render/chip.js',
   './js/render/color.js',
   './js/render/fonts.js',
   './js/render/index.js',
@@ -85,17 +112,24 @@ const APP_SHELL = [
   './js/themes/index.js',
   './js/touch-guard.js',
   './js/ui/banner.js',
+  './js/ui/chip-flash.js',
+  './js/ui/choice.js',
   './js/ui/debug.js',
   './js/ui/format.js',
   './js/ui/hud.js',
   './js/ui/index.js',
   './js/ui/number-mode.js',
   './js/ui/screens.js',
+  './js/ui/settings.js',
+  './js/ui/tally.js',
   './js/url-options.js',
   './assets/icons/icon.svg',
   // Fonts: the Latin-1 subsets of IBM Plex Mono (Regular, SemiBold).
   './assets/fonts/IBMPlexMono-Regular-Latin1.woff2',
   './assets/fonts/IBMPlexMono-SemiBold-Latin1.woff2',
+  // Music: only the first track (TRACKS[0] in js/audio/music.js); the rest
+  // are cached on first use.
+  './assets/music/free-run.mp3',
 ];
 
 self.addEventListener('install', (event) => {
@@ -112,17 +146,40 @@ self.addEventListener('activate', (event) => {
     caches.keys()
       .then((names) => Promise.all(
         names
-          .filter((name) => name.startsWith('mem-block-8-') && name !== CACHE_NAME)
+          .filter((name) => name.startsWith('mem-block-8-') && name !== CACHE_NAME && name !== MUSIC_CACHE)
           .map((name) => caches.delete(name)),
       ))
       .then(() => self.clients.claim()),
   );
 });
 
+/**
+ * A music track: from any cache (the first is in the shell), else fetched
+ * and stored in the music cache. Only complete responses are stored, never
+ * partial (206) ones from range requests.
+ * @param {Request} request
+ * @returns {Promise<Response>}
+ */
+async function musicResponse(request) {
+  const cached = await caches.match(request, { ignoreSearch: true });
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.status === 200) {
+    const copy = response.clone();
+    caches.open(MUSIC_CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
+  }
+  return response;
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
   // Only handle same-origin GETs; the app makes no external requests anyway.
-  if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) {
+  if (request.method !== 'GET' || url.origin !== self.location.origin) {
+    return;
+  }
+  if (url.pathname.includes(MUSIC_PATH) && url.pathname.endsWith('.mp3')) {
+    event.respondWith(musicResponse(request));
     return;
   }
   event.respondWith(

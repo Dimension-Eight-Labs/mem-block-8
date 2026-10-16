@@ -3,7 +3,7 @@
  *
  * Responsibility: turn a read-only snapshot of engine state into pixels on
  * the playfield canvas (well, blocks, falling piece, next-piece preview,
- * the DIM8 mark).
+ * the DIM8 mark), and small drawn-in-code icons (the microchip).
  *
  * Belongs here: canvas sizing (including devicePixelRatio), drawing, and
  * visual-only effects.
@@ -17,3 +17,4 @@ export { createRenderer } from './renderer.js';
 export { RENDER_DEFAULTS, MONO_FONT } from './options.js';
 export { computeLayout } from './layout.js';
 export { loadFonts, CANVAS_FONTS, FONT_WAIT_MS } from './fonts.js';
+export { drawChipIcon, chipShapes } from './chip.js';

@@ -2,19 +2,18 @@
  * main.js - Entry point for Mem Block 8.
  *
  * A small bootstrap: installs the touch guards (js/touch-guard.js), registers the
- * service worker, and wires engine, session, loop, input, render, ui, and
- * storage together. Behaviour lives in those modules, not here; game flow
- * and progression wiring live in js/session.js.
+ * service worker, and wires engine, session, loop, input, render, ui,
+ * audio, and storage together. Behaviour lives in those modules, not here;
+ * game flow and progression wiring live in js/session.js.
  */
 
 import { createGame, TICK_MS } from './engine/index.js';
 import { createRenderer, loadFonts } from './render/index.js';
 import { createInput, TOUCH, GESTURE_ACTIONS, KEYS, KEY_REPEAT, SCREENS, DEBUG_LOG_LENGTH } from './input/index.js';
-import {
-  createScreens, createHud, createBanner, createNumberMode, NUMBER_MODES, DEFAULT_NUMBER_MODE,
-} from './ui/index.js';
+import { createScreens, createHud, createBanner, createChipFlash, createSettings } from './ui/index.js';
 import { DEFAULT_THEME, tintForBank } from './themes/index.js';
-import { createStorage, createHighScoreStore, createChoiceStore, NUMBER_MODE_KEY } from './storage/index.js';
+import { createStorage, createHighScoreStore } from './storage/index.js';
+import { createAudio } from './audio/index.js';
 import { createLoop } from './loop.js';
 import { createSession } from './session.js';
 import { readUrlOptions } from './url-options.js';
@@ -84,14 +83,27 @@ async function boot() {
   renderer.draw(null);
 
   const storage = createStorage();
-  const numberMode = createNumberMode(
-    createChoiceStore(storage, NUMBER_MODE_KEY, NUMBER_MODES, DEFAULT_NUMBER_MODE),
-  );
+  const settings = createSettings(storage);
+  // One state for the HUD tap and the NUMBER FORMAT setting.
+  const numberMode = settings.choice('numberMode');
   const screens = createScreens(document.getElementById('overlay'), {
-    onCommand: (command) => session.handleCommand(command),
+    onCommand: (command, setting) => {
+      if (command === 'setting') settings.cycle(setting);
+      else session.handleCommand(command);
+    },
     numberMode,
+    settings,
   });
   screens.show('start'); // replaces the static markup, in the saved number mode
+
+  const audio = createAudio({ settings: { music: settings.choice('music'), sfx: settings.choice('sfx') } });
+  // iOS only lets audio start inside a user gesture, so every tap, click,
+  // and key press offers to unlock it (cheap once unlocked). Capture phase,
+  // so it runs before the handler that acts on the gesture (starting the
+  // game, a settings toggle) and the sound for that action can play.
+  for (const type of ['touchend', 'pointerup', 'click', 'keydown']) {
+    window.addEventListener(type, () => audio.unlock(), { capture: true, passive: true });
+  }
 
   let loop = null;
   let input = null;
@@ -116,16 +128,26 @@ async function boot() {
       numberMode,
     }),
     banner: createBanner(document.getElementById('banner'), SCREENS.fullWordMs),
+    chipFlash: createChipFlash(document.getElementById('chip-flash'), {
+      durationMs: SCREENS.chipFlashMs,
+      numberMode,
+      colors: { pin: '#39ff9f', body: '#0a0b10' }, // --color-accent, --color-surround
+    }),
     highScore: createHighScoreStore(storage),
     startLoop: () => loop.start(),
     stopLoop: () => loop.stop(),
     resetInput: () => input.reset(),
     now: () => performance.now(),
     overlayInputDelayMs: SCREENS.overlayInputDelayMs,
+    onEvent: (event) => audio.onEvent(event),
     transition: {
-      durationMs: SCREENS.bankTransitionMs,
+      // Matched to the modem sequence while sound effects are on.
+      timing: () => audio.transitionTiming({ silentMs: SCREENS.bankTransitionMs, readyMs: SCREENS.bankReadyMs }),
       skipAfterMs: SCREENS.bankTransitionSkipAfterMs,
       connectAfterMs: SCREENS.bankTransitionConnectAfterMs,
+      skipReadyMs: SCREENS.bankSkipReadyMs,
+      tallyStepMs: SCREENS.chipTallyStepMs,
+      tallyMaxSteps: SCREENS.chipTallyMaxSteps,
     },
   });
 
@@ -157,6 +179,7 @@ async function boot() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) session.pause();
+    audio.setHidden(document.hidden);
   });
 }
 

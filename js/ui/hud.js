@@ -1,13 +1,17 @@
 /**
  * js/ui/hud.js - The register-dump HUD and the pause button.
  *
- * Four registers in the header, beside the pause button:
+ * Five registers in the header, beside the pause button:
  *
- *   hex / decimal (2 x 2)          binary (one per row)
+ *   hex / decimal (3 rows)         binary (one per row)
  *   SCR 0x000400  HI  0x001A40     SCR 0b0000 0000 0000 0100 0000 0000
  *   BNK 0x02      LNS 0x0013       HI  0b0000 0000 0001 1010 0100 0000
- *                                  BNK 0b0000 0010
+ *   CHP 0x03                       BNK 0b0000 0010
  *                                  LNS 0b0000 0000 0001 0011
+ *                                  CHP 0b0000 0011
+ *
+ * The header has one fixed height for every mode (sized in css/main.css for
+ * binary's five rows), so switching modes never resizes the playfield.
  *
  * The whole HUD is one native <button>: tapping it cycles the number mode
  * (hex -> binary -> decimal). Being a button, js/touch-guard.js leaves its
@@ -19,17 +23,18 @@
  * it into a size that fits the header), so a register that widens past its
  * normal size shrinks the text instead of overflowing.
  *
- * A changed value glows briefly (CSS animation, about 200 ms). Two
- * identical animations are alternated so a new glow can restart a running
- * one without forcing a layout.
+ * A value that goes up glows briefly (CSS animation, about 200 ms); one
+ * that drops (CHP cashed in, a new game) just changes. Two identical
+ * animations are alternated so a new glow can restart a running one
+ * without forcing a layout.
  */
 
 import { REGISTERS, formatNumber } from './format.js';
 
 /** HUD fields in display order. */
-const FIELDS = Object.freeze(['score', 'highScore', 'bank', 'lines']);
+const FIELDS = Object.freeze(['score', 'highScore', 'bank', 'lines', 'chips']);
 
-/** Characters between the two columns in the 2 x 2 layout (CSS column-gap: 2ch). */
+/** Characters between the two columns in the hex / decimal layout (CSS column-gap: 2ch). */
 const COLUMN_GAP_CHARS = 2;
 
 /**
@@ -38,6 +43,7 @@ const COLUMN_GAP_CHARS = 2;
  * @property {number} highScore
  * @property {number} bank
  * @property {number} lines
+ * @property {number} chips
  */
 
 /**
@@ -58,7 +64,8 @@ export function hudLabel(field) {
 export function hudRowChars(texts, mode) {
   const cell = (field) => hudLabel(field).length + texts[field].length;
   if (mode === 'bin') return Math.max(...FIELDS.map(cell));
-  const left = Math.max(cell('score'), cell('bank'));
+  // Two columns, filled row by row: SCR HI / BNK LNS / CHP.
+  const left = Math.max(cell('score'), cell('bank'), cell('chips'));
   const right = Math.max(cell('highScore'), cell('lines'));
   return left + COLUMN_GAP_CHARS + right;
 }
@@ -116,7 +123,7 @@ export function createHud({ element, pauseButton, onPause, numberMode }) {
     for (const field of FIELDS) {
       texts[field] = formatNumber(values[field], field, mode);
       if (valueEls[field].textContent !== texts[field]) valueEls[field].textContent = texts[field];
-      if (previous && previous[field] !== values[field]) glow(field);
+      if (previous && values[field] > previous[field]) glow(field);
     }
     if (mode !== shownMode) {
       shownMode = mode;

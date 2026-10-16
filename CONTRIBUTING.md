@@ -61,7 +61,15 @@ element, otherwise the touch guards cancel their clicks.
 - **Every third-party asset is recorded in `CREDITS.md`** with its license
   (asset, author, license, source URL, date added), in the same change
   that adds it.
+- **Music:** keep a screenshot of each track's source page (showing its
+  CC0 license) in `docs/licenses/music/`, and produce the shipped MP3 with
+  `scripts/convert-music.sh`, never by hand (see README, "Adding or
+  replacing music").
 - Sound effects are synthesized with Web Audio, not shipped as samples.
+- **Audio calls stay out of game logic.** The game reports events through
+  the session's single hook (`deps.onEvent`); `js/audio` decides what they
+  sound like. Keep schedules and playlist rules pure (no Web Audio) so they
+  can be tested in Node.
 
 ## Clean-room rule
 

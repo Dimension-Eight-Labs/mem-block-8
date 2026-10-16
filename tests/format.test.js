@@ -14,15 +14,15 @@ import { hudLabel, hudRowChars } from '../js/ui/hud.js';
 import { createStorage, createChoiceStore, NUMBER_MODE_KEY, KEY_PREFIX } from '../js/storage/index.js';
 import { loadFonts } from '../js/render/fonts.js';
 
-const FIELDS = ['score', 'highScore', 'bank', 'lines', 'words'];
+const FIELDS = ['score', 'highScore', 'bank', 'lines', 'chips', 'words', 'cashIn'];
 const digitsOf = (text, mode) => text.slice(mode === 'dec' ? 0 : 2).replaceAll(' ', '');
 
 // --- the width table ---------------------------------------------------------
 
-test('register table: score 24-bit, bank 8-bit, lines 16-bit, digits derived from bits', () => {
+test('register table: score 24-bit, bank 8-bit, lines 16-bit, chips 8-bit, digits derived from bits', () => {
   assert.deepEqual(
     Object.fromEntries(FIELDS.map((f) => [f, REGISTERS[f].bits])),
-    { score: 24, highScore: 24, bank: 8, lines: 16, words: 16 },
+    { score: 24, highScore: 24, bank: 8, lines: 16, chips: 8, words: 16, cashIn: 16 },
   );
   for (const f of FIELDS) {
     const r = REGISTERS[f];
@@ -165,15 +165,23 @@ test('the mode still cycles when storage throws; it is just not remembered', () 
 // --- HUD sizing ----------------------------------------------------------------
 
 const hudTexts = (values, mode) => Object.fromEntries(
-  ['score', 'highScore', 'bank', 'lines'].map((f) => [f, formatNumber(values[f], f, mode)]),
+  ['score', 'highScore', 'bank', 'lines', 'chips'].map((f) => [f, formatNumber(values[f], f, mode)]),
 );
-const ZERO = { score: 0, highScore: 0, bank: 1, lines: 0 };
+const ZERO = { score: 0, highScore: 0, bank: 1, lines: 0, chips: 0 };
 
 test('HUD labels line up: 3 characters plus a space', () => {
-  assert.deepEqual(['score', 'highScore', 'bank', 'lines'].map(hudLabel), ['SCR ', 'HI  ', 'BNK ', 'LNS ']);
+  assert.deepEqual(['score', 'highScore', 'bank', 'lines', 'chips'].map(hudLabel), ['SCR ', 'HI  ', 'BNK ', 'LNS ', 'CHP ']);
 });
 
-test('HUD row length: 2 x 2 for hex and decimal, one register per row for binary', () => {
+test('CHP: an 8-bit register in every mode', () => {
+  assert.equal(formatNumber(3, 'chips', 'hex'), '0x03');
+  assert.equal(formatNumber(3, 'chips', 'bin'), '0b0000 0011');
+  assert.equal(formatNumber(3, 'chips', 'dec'), '003');
+  assert.equal(formatNumber(255, 'chips', 'hex'), '0xFF');
+  assert.equal(formatNumber(256, 'chips', 'hex'), '0x100', 'widens, never truncates');
+});
+
+test('HUD row length: two columns for hex and decimal, one register per row for binary', () => {
   // "SCR 0x000400  HI  0x001A40"
   assert.equal(hudRowChars(hudTexts(ZERO, 'hex'), 'hex'), 26);
   // "SCR 00001024  HI  00006720"
@@ -181,7 +189,7 @@ test('HUD row length: 2 x 2 for hex and decimal, one register per row for binary
   // "SCR 0b0000 0000 0000 0000 0000 0000"
   assert.equal(hudRowChars(hudTexts(ZERO, 'bin'), 'bin'), 35);
   // Fixed widths: the row length does not change as numbers grow within range.
-  const busy = { score: 0xabcdef, highScore: 0xffffff, bank: 255, lines: 65535 };
+  const busy = { score: 0xabcdef, highScore: 0xffffff, bank: 255, lines: 65535, chips: 255 };
   for (const mode of NUMBER_MODES) {
     assert.equal(hudRowChars(hudTexts(busy, mode), mode), hudRowChars(hudTexts(ZERO, mode), mode), mode);
   }

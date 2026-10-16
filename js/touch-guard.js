@@ -15,8 +15,8 @@
  * scrolling, text selection, the long-press callout, and the emulated
  * mouse and click events.
  *
- * Because clicks are suppressed too, real controls (the pause button and
- * menu, and the Stage 5 settings screen) must opt out: put them inside an
+ * Because clicks are suppressed too, real controls (the HUD, the pause
+ * button, the menus, and the settings screen) must opt out: put them inside an
  * element with the data-native-touch attribute, or use a native button,
  * link, or form control, and touches on them are left alone.
  */

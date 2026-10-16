@@ -130,14 +130,33 @@ export const SCREENS = Object.freeze({
   // already in flight does not instantly restart the game.
   overlayInputDelayMs: 500,
 
-  // Bank transition ("BANK 0x01 FULL / CONNECTING TO BANK 0x02..."). Its
-  // length will be matched to the modem sound in Stage 5.
-  bankTransitionMs: 2500,
+  // Memory bank transition:
+  //   "MEMORY BANK 0x01 FULL"
+  //   "SWAPPING TO MEMORY BANK 0x02..."   (after the connect delay; the modem plays)
+  //   "MEMORY BANK 0x02 READY"            (the READY moment, with the chip tally)
+  // With sound effects on, READY appears when the modem finishes (about
+  // 5.6 s; transitionTiming in js/audio/modem.js) and the transition lasts
+  // that plus bankReadyMs. With them off it lasts bankTransitionMs, READY
+  // included.
+  bankTransitionMs: 4000,
+  // The READY moment: time to get ready, and room for the chip tally.
+  bankReadyMs: 900,
   // A tap or key press skips the transition only after this long, so the
-  // tap that cleared the last lines cannot skip it by accident.
+  // tap that cleared the last lines cannot skip it by accident. Skipping
+  // jumps to READY with the tally already complete...
   bankTransitionSkipAfterMs: 750,
-  // When the "CONNECTING..." line appears.
+  // ...shown this long before play resumes.
+  bankSkipReadyMs: 600,
+  // When the "SWAPPING TO..." line appears.
   bankTransitionConnectAfterMs: 900,
+  // Chip cash-in tally (js/ui/tally.js): one step (and blip) per chip, at
+  // most chipTallyMaxSteps, each chipTallyStepMs apart. 8 steps plus the
+  // done tone end well inside bankReadyMs.
+  chipTallyStepMs: 60,
+  chipTallyMaxSteps: 8,
+
+  // The "+3 CHIPS" flash where the rows cleared, rising and fading.
+  chipFlashMs: 1000,
 
   // How long "FULL WORD" (a 5-line clear) stays on screen, including its fade.
   fullWordMs: 1400,

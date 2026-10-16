@@ -1,5 +1,6 @@
 /**
- * js/progression/index.js - Memory banks (levels), scoring, and progress.
+ * js/progression/index.js - Memory banks (levels), scoring, microchip
+ * bonuses, and progress.
  *
  * Pure logic like js/engine: no DOM, clocks, storage, or randomness. It
  * reads engine events and decides score, bank, and what the engine should
@@ -18,4 +19,5 @@ export {
   isFullWord,
   dropPoints,
 } from './scoring.js';
+export { CHIPS_PER_CLEAR, CHIP_VALUE, chipsForClear, cashInPoints } from './chips.js';
 export { createProgress } from './progress.js';

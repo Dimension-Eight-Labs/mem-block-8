@@ -1,6 +1,6 @@
 /**
  * tests/progression.test.js - Bank table, gravity curve, scoring, and
- * progress events (Stage 3).
+ * progress events (Stage 3); microchip bonuses (playtest pass 1).
  */
 
 import { test } from 'node:test';
@@ -9,6 +9,7 @@ import { PIECES, getPieceById, groupPiecesBySize, validateWeights } from '../js/
 import {
   BANK_TABLE, GRAVITY_RAMP, PENTOMINO_TIERS, getBank, gravityForBank,
   LINE_CLEAR_POINTS, lineClearPoints, isFullWord, dropPoints, createProgress,
+  CHIPS_PER_CLEAR, CHIP_VALUE, chipsForClear, cashInPoints,
 } from '../js/progression/index.js';
 
 const sizes = groupPiecesBySize();
@@ -158,7 +159,7 @@ const cleared = (count) => ({ type: 'linesCleared', count });
 
 test('progress starts in bank 1 with nothing scored', () => {
   assert.deepEqual(createProgress().getState(),
-    { score: 0, bank: 1, totalLines: 0, bankLines: 0, linesToComplete: 10 });
+    { score: 0, bank: 1, totalLines: 0, bankLines: 0, linesToComplete: 10, chips: 0 });
 });
 
 test('drops and clears add to the score, with scoreChanged events', () => {
@@ -166,19 +167,24 @@ test('drops and clears add to the score, with scoreChanged events', () => {
   assert.deepEqual(progress.handle(locked(3, 10)),
     [{ type: 'scoreChanged', score: 23, points: 23, reason: 'drop' }]);
   assert.deepEqual(progress.handle(locked(0, 0)), [], 'no points, no event');
-  assert.deepEqual(progress.handle(cleared(4)),
-    [{ type: 'scoreChanged', score: 23 + 512, points: 512, reason: 'lines' }]);
+  assert.deepEqual(progress.handle(cleared(1)),
+    [{ type: 'scoreChanged', score: 23 + 64, points: 64, reason: 'lines' }]);
+  assert.deepEqual(progress.handle(cleared(4)), [
+    { type: 'scoreChanged', score: 23 + 64 + 512, points: 512, reason: 'lines' },
+    { type: 'chipsEarned', count: 3, total: 3, fullWord: false },
+  ]);
   assert.deepEqual(progress.handle({ type: 'spawned' }), []);
   assert.deepEqual(progress.handle({ type: 'clearStarted', count: 4 }), [], 'scored on linesCleared only');
-  assert.equal(progress.getState().totalLines, 4);
+  assert.equal(progress.getState().totalLines, 5);
 });
 
 test('a 5-line clear emits fullWord', () => {
   const progress = createProgress();
   const events = progress.handle(cleared(5));
-  assert.deepEqual(events.map((e) => e.type), ['scoreChanged', 'fullWord']);
+  assert.deepEqual(events.map((e) => e.type), ['scoreChanged', 'fullWord', 'chipsEarned']);
   assert.equal(events[1].bank, 1);
-  assert.deepEqual(progress.handle(cleared(4)).map((e) => e.type), ['scoreChanged']);
+  assert.equal(events[2].fullWord, true);
+  assert.deepEqual(progress.handle(cleared(1)).map((e) => e.type), ['scoreChanged']);
 });
 
 test('filling a bank emits bankComplete with the next bank settings', () => {
@@ -192,8 +198,9 @@ test('filling a bank emits bankComplete with the next bank settings', () => {
     { from: 1, to: 2, gravity: getBank(2).gravityMsPerRow },
   );
   assert.deepEqual(bank.weights, getBank(2).weights);
+  // Chips: 3 + 3 + 1, cashed in at bank 1: 7 x 0x100 x 1.
   assert.deepEqual(progress.getState(),
-    { score: 512 + 512 + 128, bank: 2, totalLines: 10, bankLines: 0, linesToComplete: 10 });
+    { score: 512 + 512 + 128 + 7 * 256, bank: 2, totalLines: 10, bankLines: 0, linesToComplete: 10, chips: 0 });
   assert.equal(progress.getBankSettings().bank, 2);
 });
 
@@ -237,4 +244,79 @@ test('progress with engine events end to end: scores are always integers', () =>
   assert.ok(Number.isSafeInteger(score));
   assert.equal(progress.getState().score, score);
   assert.ok(progress.getState().bank > 50);
+});
+
+// --- microchips ------------------------------------------------------------------
+
+test('chips table: single rows earn none; 2, 3, 4 rows earn 1, 2, 3; FULL WORD earns 5', () => {
+  assert.deepEqual(CHIPS_PER_CLEAR, [0, 0, 1, 2, 3, 5]);
+  assert.deepEqual([1, 2, 3, 4, 5].map(chipsForClear), [0, 1, 2, 3, 5]);
+  assert.ok(chipsForClear(5) > 0, 'a FULL WORD always earns chips (its sound is part of the chips sound)');
+  for (const bad of [0, 6, 1.5, -1]) assert.throws(() => chipsForClear(bad), RangeError);
+});
+
+test('cash-in: chips x CHIP_VALUE (0x100) x the bank just completed', () => {
+  assert.equal(CHIP_VALUE, 0x100);
+  assert.equal(cashInPoints(3, 1), 0x300);
+  assert.equal(cashInPoints(3, 2), 0x600);
+  assert.equal(cashInPoints(10, 7), 10 * 256 * 7);
+  assert.equal(cashInPoints(0, 9), 0);
+  assert.throws(() => cashInPoints(-1, 1), RangeError);
+  assert.throws(() => cashInPoints(1, 0), RangeError);
+});
+
+test('chips accumulate during the bank; single-row clears earn none', () => {
+  const progress = createProgress();
+  assert.deepEqual(progress.handle(cleared(2)).at(-1), { type: 'chipsEarned', count: 1, total: 1, fullWord: false });
+  assert.deepEqual(progress.handle(cleared(3)).at(-1), { type: 'chipsEarned', count: 2, total: 3, fullWord: false });
+  assert.ok(!progress.handle(cleared(1)).some((e) => e.type === 'chipsEarned'));
+  assert.equal(progress.getState().chips, 3);
+});
+
+test('the bank-completing clear counts, then all chips are cashed in at the bank multiplier and reset', () => {
+  const progress = createProgress();
+  progress.handle(cleared(4)); // 3 chips
+  progress.handle(cleared(3)); // 2 chips (7 lines)
+  const before = progress.getState().score;
+  const events = progress.handle(cleared(3)); // 2 more chips, completes bank 1
+  assert.deepEqual(events.map((e) => e.type), ['scoreChanged', 'chipsEarned', 'chipsCashed', 'scoreChanged', 'bankComplete']);
+  assert.deepEqual(events[1], { type: 'chipsEarned', count: 2, total: 7, fullWord: false });
+  assert.deepEqual(events[2], { type: 'chipsCashed', count: 7, points: 7 * 0x100 * 1, bank: 1 });
+  assert.deepEqual(events[3], { type: 'scoreChanged', score: before + 256 + 7 * 256, points: 7 * 256, reason: 'chips' });
+  // The score includes the cash-in the moment the bank completes.
+  assert.equal(progress.getState().score, before + 256 + 7 * 256);
+  assert.equal(progress.getState().chips, 0);
+
+  // Bank 2: the multiplier is the bank just completed (2).
+  progress.handle(cleared(5)); // 5 chips
+  progress.handle(cleared(4)); // 3 chips
+  const second = progress.handle(cleared(1)).find((e) => e.type === 'chipsCashed');
+  assert.deepEqual(second, { type: 'chipsCashed', count: 8, points: 8 * 0x100 * 2, bank: 2 });
+});
+
+test('a bank completed with no chips cashes nothing in', () => {
+  const progress = createProgress();
+  for (let i = 0; i < 9; i++) progress.handle(cleared(1));
+  const events = progress.handle(cleared(1));
+  assert.deepEqual(events.map((e) => e.type), ['scoreChanged', 'bankComplete']);
+});
+
+test('game over before the bank completes loses uncashed chips', () => {
+  const progress = createProgress();
+  progress.handle(cleared(2));
+  progress.handle(cleared(4));
+  const score = progress.getState().score;
+  assert.deepEqual(progress.handle({ type: 'gameOver', reason: 'blockOut' }), [{ type: 'chipsLost', count: 4 }]);
+  assert.equal(progress.getState().score, score, 'no points for lost chips');
+  assert.equal(progress.getState().chips, 0);
+  // With nothing held, game over reports nothing.
+  assert.deepEqual(createProgress().handle({ type: 'gameOver', reason: 'lockOut' }), []);
+});
+
+test('several banks in one clear: the first cash-in takes every chip', () => {
+  const progress = createProgress({
+    banks: (bank) => ({ bank, linesToComplete: 2, gravityMsPerRow: 500, weights: { O4: 1 } }),
+  });
+  const events = progress.handle(cleared(5));
+  assert.deepEqual(events.filter((e) => e.type === 'chipsCashed'), [{ type: 'chipsCashed', count: 5, points: 5 * 256, bank: 1 }]);
 });

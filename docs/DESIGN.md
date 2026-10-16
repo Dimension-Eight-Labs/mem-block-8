@@ -107,7 +107,12 @@ no leaderboards.
 
 Levels are called **memory banks**. Clearing lines fills the current bank;
 a full bank "dials in" to the next one. Bank numbers are shown in hex
-(`BANK 0x01`, `0x02`, ...).
+(`MEMORY BANK 0x01`, `0x02`, ...).
+
+**Wording rule:** player-facing text always says "MEMORY BANK", never
+"BANK" on its own and never "CONNECTING TO BANK": playtesters outside the
+joke read those as online banking. The HUD register label `BNK` is the one
+exception. A test checks every screen line and the README's how-to-play.
 
 All values are first-pass and live in one table,
 [`js/progression/banks.js`](../js/progression/banks.js), to be tuned by
@@ -129,10 +134,25 @@ playtesting.
   endless table.
 - **Carry-over:** lines beyond a bank's 10 count towards the next bank.
 - **Bank transition:** when a bank fills (after the line clear flash), the
-  game freezes and shows "BANK 0x01 FULL", then "CONNECTING TO BANK
-  0x02..." for 2.5 s. A tap or key press skips it, but only after the first
-  750 ms, so the tap that cleared the lines cannot skip it by accident.
-  Stage 5 plays the modem sequence here and matches the duration to it.
+  game freezes and the screen prints, like a terminal log:
+
+  | When | Line |
+  | --- | --- |
+  | At once | `MEMORY BANK 0x01 FULL` |
+  | After 900 ms, while the modem plays | `SWAPPING TO MEMORY BANK 0x02..._` |
+  | When the modem finishes: the READY moment, 900 ms | `MEMORY BANK 0x02 READY_` and, if chips were cashed in, the tally `CHIPS 0x03 = +0x0600` |
+
+  With sound effects on, the modem dial-in plays (see [Audio](#audio)) and
+  READY appears as it ends: 5575 ms in, 6475 ms in all. With sound effects
+  off the transition lasts 4000 ms, READY (at 3100 ms) included, because
+  the moment to get ready matters with or without sound. A tap or key
+  press skips the swap, but only after the first 750 ms, so the tap that
+  cleared the lines cannot skip it by accident. Skipping hangs up the
+  modem with a short click, jumps to READY with the chip tally already
+  complete (earned chips are never lost by skipping), plays only the
+  "done" tone, and resumes play 600 ms later. Taps during READY wait for
+  it to finish rather than land in the game. All timings are in `SCREENS`
+  (`js/input/bindings.js`).
 - **Playfield tint:** each bank has its own dark playfield tint (six
   placeholder tints, repeating from bank 7). The DIM8 mark stays a slightly
   lighter shade of whatever tint it sits on.
@@ -156,7 +176,45 @@ reads cleanly in hex:
   cells tall) shows "FULL WORD" over the playfield for a moment.
 - **Drop bonus** (not multiplied by the bank): 1 point per row a piece falls
   while soft drop is held, 2 points per row of a hard drop.
+- **Microchip bonuses:** see below.
 - Scores are always whole numbers.
+
+## Microchips
+
+Multi-row clears earn **microchips**, which are cashed in for points when
+the memory bank completes. They reward building for big clears, and make
+surviving to the end of the bank worth something. First-pass values, in
+[`js/progression/chips.js`](../js/progression/chips.js):
+
+| Rows at once | Chips |
+| --- | --- |
+| 1 | 0 (a normal clear) |
+| 2 | 1 |
+| 3 | 2 |
+| 4 | 3 |
+| 5 (FULL WORD) | 5 |
+
+- **Accumulate** during the current bank, including the chips from the
+  clear that completes it.
+- **Cash-in** when the bank completes: chips x `CHIP_VALUE` (`0x100` = 256)
+  x the number of the bank just completed, added to the score at once.
+  The count then resets to zero for the new bank.
+- **Lost** if the game ends before the bank completes: no points.
+- The progression is authoritative: the score includes the cash-in the
+  moment the bank completes, and the high score updates as usual. The
+  READY moment's tally only animates that change (the HUD's `SCR` holds
+  the cash-in back during the swap and counts up with the tally).
+- **Display:**
+  - When chips are earned, a small microchip icon (a DIP chip drawn in
+    code: body, pin-1 notch, pins along both sides, in the green accent)
+    flashes with `+0x01 CHIP` or `+0x03 CHIPS` at the height of the
+    cleared rows, rising slightly and fading over 1 s. On a FULL WORD it
+    sits below the centred FULL WORD banner so both stay readable.
+  - The HUD's `CHP` register shows the chips held.
+  - The READY moment shows the tally line `CHIPS 0x03 = +0x0600`, counting
+    up in steps (one per chip, at most 8, 60 ms apart), with a blip per
+    step and a "done" tone. No chips, no tally line.
+  - Game over with chips held shows `CHIPS LOST 0x02` under "MEMORY FULL".
 
 ## High score
 
@@ -213,8 +271,9 @@ full-width bottom strip (15% of the height) that takes priority.
 
 - **Start:** the title "MEM BLOCK 8" / "DIM8 LABS", "MEMORY BANK READY_",
   "12 x 22 CELLS", the capacity in words (`0x0108 WORDS` in hex), "TAP TO
-  START" (and "PRESS ENTER" when a mouse or trackpad is present). The title
-  lives here rather than in a page header, so the header can hold the HUD.
+  START" (and "PRESS ENTER" when a mouse or trackpad is present), and a
+  **SETTINGS** button. The title lives here rather than in a page header,
+  so the header can hold the HUD.
 - **Pause button:** a 44 x 44 px button at the top right, beside the HUD,
   above the playfield and away from the bottom soft-drop strip. Hidden when
   there is nothing to pause.
@@ -223,11 +282,27 @@ full-width bottom strip (15% of the height) that takes priority.
   RESTART changes to **CONFIRM RESTART** and needs a second tap. Taps on the
   playfield do nothing while paused, so a stray touch cannot resume. P,
   Escape, or Enter also resume. Resuming continues exactly where the game
-  stopped. There is no settings entry yet; the settings screen arrives in
-  Stage 5.
+  stopped. A **SETTINGS** button opens the settings screen; the game stays
+  paused while it is open.
+- **Settings:** "SETTINGS_" and one button per setting, each showing its
+  value; tapping a button cycles it, and the change applies at once:
+  - **MUSIC: ON / OFF** (default on)
+  - **SOUND FX: ON / OFF** (default on)
+  - **NUMBER FORMAT: HEX / BIN / DEC** (default hex; the same setting the
+    HUD tap cycles, so the two always agree)
+  - **BACK** returns to where settings was opened from (start screen or
+    pause menu); P or Escape also go back.
+
+  Settings are remembered on this device (`mem-block-8:music`,
+  `mem-block-8:soundFx`, `mem-block-8:numberMode`); without storage the
+  game uses the defaults and still lets them be changed for the session.
+  All buttons are at least 44 x 44 px. Stage 6 adds rows (theme, logo
+  placement, control variants) to the same list.
 - **Bank transition:** see [Memory banks](#memory-banks-levels).
-- **Game over:** "MEMORY FULL", the score, bank reached, and lines (one per
-  line), then "NEW HIGH SCORE" (or the saved high score), then "TAP TO
+- **Game over:** "NO CARRIER" (what a modem prints when the line drops),
+  "MEMORY FULL", "CHIPS LOST 0x02" if chips were held, the score, memory
+  bank reached ("MEMORY BANK 0x03"), and lines (one per line), then "NEW
+  HIGH SCORE" (or the saved high score), then "TAP TO
   REBOOT". Input is ignored for 500 ms first so a tap already in progress
   does not restart the game instantly.
 - **One number format everywhere:** every number on every screen (start,
@@ -254,13 +329,15 @@ button, out of the bottom thumb zone.
 | `HI` | High score | 24-bit | 6 digits | 24 digits | 8 digits |
 | `BNK` | Current bank | 8-bit | 2 digits | 8 digits | 3 digits |
 | `LNS` | Total lines cleared | 16-bit | 4 digits | 16 digits | 5 digits |
+| `CHP` | Microchips held this bank | 8-bit | 2 digits | 8 digits | 3 digits |
 
 ```
 hex (default)                  binary                                decimal
 SCR 0x000400  HI  0x001A40     SCR 0b0000 0000 0000 0100 0000 0000   SCR 00001024  HI  00006720
 BNK 0x02      LNS 0x0013       HI  0b0000 0000 0001 1010 0100 0000   BNK 002       LNS 00019
-                               BNK 0b0000 0010
+CHP 0x03                       BNK 0b0000 0010                       CHP 003
                                LNS 0b0000 0000 0001 0011
+                               CHP 0b0000 0011
 ```
 
 - **Modes:** hex (lowercase `0x`, uppercase digits), binary (`0b`, digits
@@ -276,23 +353,83 @@ BNK 0x02      LNS 0x0013       HI  0b0000 0000 0001 1010 0100 0000   BNK 002    
 - **Overflow:** a value too large for its register widens that field (a
   whole nibble at a time in binary); digits are never truncated or wrapped.
   The HUD then uses a slightly smaller font so it still fits.
-- **Layout:** hex and decimal are a 2 x 2 grid; binary shows one register
-  per row. The header is a fixed 60 px tall (four binary rows), so changing
-  mode never resizes the playfield. The font is the largest that fits the
-  width (up to 16 px for hex and decimal, 13 px for binary): at 320 px wide,
-  15.4 px and 11.4 px.
-- **Glow:** a value that changes flares brighter for about 200 ms, like a
-  VFD segment (CSS only).
+- **Layout:** hex and decimal are two columns, three rows (SCR / HI, BNK /
+  LNS, CHP); binary shows one register per row (five rows). The header is
+  a fixed 64 px tall in every mode (five binary rows at 11 px on 12 px lines), so changing
+  mode never resizes the playfield; that is 4 px more than the four-row
+  header of Stage 4. The font is the largest that fits the width (up to
+  16 px for hex and decimal, 11 px for binary).
+- **Glow:** a value that goes up flares brighter for about 200 ms, like a
+  VFD segment (CSS only). A value that drops (CHP cashed in, a new game)
+  just changes.
 
 ## Audio
 
-- **Level complete:** a mock acoustic modem sequence synthesized in code
-  with the Web Audio API: DTMF dialling, then an answer tone, then a
-  1200/2400 bps style handshake.
-- **Sound effects:** all synthesized; no audio sample files for effects.
-- **Music:** CC0-licensed tracks only, played from MP3/AAC files. The first
-  track is cached at install; others are cached on demand when first played.
-- **Separate toggles** for music and sound effects.
+All sound effects are **synthesized** in code with the Web Audio API (no
+sample files). Music is CC0 tracks (see [CREDITS.md](../CREDITS.md)).
+Music and sound effects have **separate toggles** in settings, and music
+sits noticeably lower in the mix than the effects. On iPhone the game
+follows the ring/silent switch and mixes with other apps' audio (audio
+session type "ambient"), and nothing sounds until the first tap.
+
+### Sound effects
+
+| Event | Sound |
+| --- | --- |
+| Piece locks (including hard drops) | A soft, short relay / key click: a tick of bright noise over a small low thump |
+| Rotation | A very faint tick, about 12 dB below the lock click |
+| Moves | Silent (they repeat many times a second) |
+| Line clear (as the flash starts) | A short rising chirp; higher and slightly longer for more lines (1 to 5) |
+| Chips earned (as the rows vanish, after the chirp) | A quick, bright rising square-wave arpeggio, an old computer's "success" beep: up a C major arpeggio from C5, one more note per chip (1 chip: 3 notes; 3 chips: 5 notes, higher and longer) |
+| FULL WORD | Part of the chips sound, not a second sound: the whole two-octave run to C7 with a long last note |
+| Bank complete | The modem dial-in (below) |
+| READY moment, chips cashed in | A blip per tally step, each a little higher, then a two-note "done" tone; only after the modem has finished |
+| Skipping the transition | The modem stops at once with a short hang-up click, then only the "done" tone (if chips were cashed in) |
+| Game over | A busy signal: 480 + 620 Hz, 0.5 s on, 0.5 s off, three times, under "NO CARRIER" |
+
+Rewards sound like a computer, not money: square-wave beeps and
+arpeggios, no bells or cash register. Volumes and timings are in one
+table, `EFFECTS` in `js/audio/sfx.js` (the modem's phase timings in
+`MODEM`, `js/audio/modem.js`).
+
+### Modem dial-in (bank complete)
+
+The music fades out (0.25 s), then after a 0.3 s lead-in the machine
+"dials up" the next bank, about 5.3 s in all:
+
+| Phase | Starts | Length | Imitates |
+| --- | --- | --- | --- |
+| Dial tone | 0.000 s | 0.45 s | Off-hook dial tone, 350 + 440 Hz |
+| Dialling | 0.570 s | 0.585 s | DTMF digits 3-4-6-8 ("DIM8" on a keypad): 90 ms tones, 75 ms gaps, standard pairs (3 = 697 + 1477, 4 = 770 + 1209, 6 = 770 + 1477, 8 = 852 + 1336 Hz) |
+| Ringback | 1.355 s | 0.5 s | One ring heard by the caller, 440 + 480 Hz |
+| Answer tone | 1.975 s | 0.6 s | The answering modem, 2100 Hz with a slight 15 Hz wobble |
+| Handshake: carrier exchange | 2.575 s | 0.5 s | Both carriers steady (1200 + 2400 Hz), then a brief unscrambled tone pattern flipping between two pairs |
+| Handshake: scrambled data | 3.075 s | 1.2 s | The classic screech: a warbling carrier drifting around 1800 Hz under band-passed noise bursts whose centre keeps shifting |
+| Handshake: training hiss | 4.275 s | 0.7 s | Broader, smoother noise with a faint steady carrier, the modems settling on a speed |
+| Handshake: settle | 4.975 s | 0.3 s | A near-silent hush, the "connected" moment; fades out at 5.275 s |
+
+Times are from the first dial tone. The number is not a real phone
+number. READY appears at lead-in + sequence = 5575 ms; the transition
+lasts that plus the 900 ms READY moment, 6475 ms.
+
+### Music
+
+- **Gameplay only:** not on the start screen, pause menu, settings, game
+  over, or during a bank transition. Pausing pauses the music; resuming
+  continues from the same place.
+- **Playlist:** bank 1 plays the first track, each completed bank moves to
+  the next, cycling (table `TRACKS` in `js/audio/music.js`; Stage 6 maps
+  tracks to era themes). The current order: Free Run, 8 Bit The Hero,
+  8 bit Battle Theme, Pixel Sprinter, Boss Battle #2, Crow Man's Stage,
+  Iced Village (cut to a 2:24 loop, 48 bars, so it fits in a phone's
+  memory once decoded).
+- **Bank transition:** music fades out before the modem starts and never
+  plays over it; the next bank's track starts when play resumes.
+- **Seamless loops:** each track loops without a gap (sample-exact loop
+  points, no crossfade).
+- **Offline:** the first track is cached at install; the others are cached
+  the first time they play. A track that is missing or fails to load just
+  leaves that bank without music.
 
 ## Visuals
 

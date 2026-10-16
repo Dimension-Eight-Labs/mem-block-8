@@ -44,8 +44,8 @@
   /* --- Touch targets: Apple's minimum comfortable tap size --- */
   --tap-min: 44px;
 
-  /* --- Header: fits four HUD rows in binary mode (4 x 13px x 1.15) --- */
-  --header-height: 60px;
+  /* --- Header: fits five HUD rows in binary mode (5 x 12px lines = 60) --- */
+  --header-height: 64px;
 }
 
 /*
@@ -171,7 +171,7 @@ body {
 /*
  * Header: the register-dump HUD, then the pause button on the right. It
  * lives at the top, away from the bottom soft-drop strip where thumbs rest.
- * Its height is fixed (four binary rows) so switching number modes never
+ * Its height is fixed (five binary rows) so switching number modes never
  * resizes the playfield. It is a size container so the HUD can fit its
  * font to the header width (cqw).
  */
@@ -188,8 +188,9 @@ body {
 
 /*
  * Register-dump HUD (js/ui/hud.js). A native button: tap to cycle hex ->
- * binary -> decimal. Hex and decimal use a 2 x 2 grid; binary stacks one
- * register per row. The font size is the largest that fits the longest row
+ * binary -> decimal. Hex and decimal use a two-column grid (SCR HI / BNK
+ * LNS / CHP, three rows); binary stacks one register per row (five). The
+ * font size is the largest that fits the longest row
  * (--hud-chars characters, set from JS; a monospace character is about
  * 0.6em, 0.62 leaves a margin for fallback fonts), capped per mode, so the
  * HUD can never overflow at any phone width, even when a register widens.
@@ -219,9 +220,14 @@ body {
 }
 
 .hud[data-mode="bin"] {
-  --hud-max: 13px;
+  /*
+   * Five rows must fit --header-height. A fixed 12 px line, not a ratio:
+   * browsers round fractional line boxes up (5 x 11 x 1.15 = 63.25 came
+   * out as 65), and 5 x 12 = 60 leaves room.
+   */
+  --hud-max: 11px;
   grid-template-columns: max-content;
-  line-height: 1.15;
+  line-height: 12px;
 }
 
 .reg-label {
@@ -352,9 +358,21 @@ body {
   cursor: pointer;
 }
 
-.menu-button[data-command="restart"] {
+.menu-button[data-command="restart"],
+.menu-button[data-command="settings"] {
   color: var(--color-text);
   border-color: var(--color-text-dim);
+}
+
+/*
+ * Settings rows ("MUSIC: ON") share one width so they line up as a list,
+ * and never wrap. 17em fits the longest row ("NUMBER FORMAT: HEX") on a
+ * 320 px phone.
+ */
+.overlay[data-screen="settings"] .menu-button {
+  width: 17em;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 /* Transition lines that appear after a delay (set inline from JS). */
@@ -399,6 +417,60 @@ body {
   8% { opacity: 1; }
   75% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/*
+ * "+3 CHIPS": the chip icon and count where the rows cleared (top is set
+ * from JS), rising slightly as it fades (js/ui/chip-flash.js sets the
+ * duration). Same dark backing as the banner, smaller text.
+ */
+.chip-flash {
+  position: absolute;
+  left: 50%;
+  margin: 0;
+  padding: 0.15em 0.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  transform: translate(-50%, -50%);
+  background: rgba(10, 11, 16, 0.85);
+  color: var(--color-accent);
+  font-size: var(--font-size-body);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.chip-flash[hidden] {
+  display: none;
+}
+
+.chip-icon {
+  width: 1.5em;
+  height: 1em;
+}
+
+.chip-flash.show {
+  animation-name: chip-flash;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+@keyframes chip-flash {
+  0% { opacity: 0; transform: translate(-50%, -50%); }
+  10% { opacity: 1; }
+  65% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, calc(-50% - 1.2em)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes chip-flash {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    65% { opacity: 1; }
+    100% { opacity: 0; }
+  }
 }
 
 /*
