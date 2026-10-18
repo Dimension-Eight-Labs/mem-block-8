@@ -6,9 +6,9 @@ memory and vintage computing. Blocks of memory drop into a 12 x 22 well; fill
 rows to clear them. Built as an installable Progressive Web App for iPhone
 Safari (Add to Home Screen) and desktop browsers.
 
-> Status: playtest pass 1 (0.5.1) after Stage 5 - microchip bonuses, a
-> longer modem handshake with a READY moment, "MEMORY BANK" wording, a
-> trimmed music loop. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> Status: 0.5.3 after Stage 5 - playtest pass 2 (the Stage 5 modem
+> screech restored, a curated piece pool, louder reward sounds with a
+> music duck), then a workaround for the iOS 27 status bar blur. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Principles
 
@@ -49,13 +49,20 @@ Plain HTTP on a LAN address is not a secure context, so the service worker
 does not register there: the game works, but not offline and not as an
 installed app. That needs HTTPS (GitHub Pages, set up after Stage 2).
 
+**Testing the installed app's status bar.** iOS reads the app's status
+bar setting only when the app is added to the home screen. After deploying
+a change to it (such as 0.5.3's iOS status bar workaround), delete the app
+from the home screen and add it again from Safari, or the old setting
+stays. A true test needs the installed app over HTTPS (GitHub Pages); the
+LAN address cannot be installed as an app.
+
 ### Debug overlay and test variants
 
 Add URL parameters to compare options on a phone without editing code:
 
 | Parameter | Effect |
 | --- | --- |
-| `?debug=1` | Log of the last few gestures (timing, distance, zone, action) and faint zone lines on the playfield |
+| `?debug=1` | Log of the last few gestures (timing, distance, zone, action) and sound effects (played or not, audio state, music duck), and faint zone lines on the playfield |
 | `?moveOn=down` | Side taps move on touch-down instead of release |
 | `?doubleTap=anywhere` | Double tap anywhere to hard drop (single taps then wait 250 ms) |
 | `?logo=center` | DIM8 mark centred in the playfield instead of near the bottom |
@@ -211,8 +218,26 @@ assets/fonts/           IBM Plex Mono (woff2 subsets) and its OFL license
 assets/music/           CC0 music tracks (MP3); originals/ is local only
 docs/licenses/music/    License screenshot for each track
 tests/                  node --test unit tests
+tools/                  Developer tools (not part of the game)
 docs/                   Design and architecture docs
 ```
+
+## Developer tools
+
+Pages for working on the game. They are not linked from the game, not in
+the service worker's `APP_SHELL`, and change nothing; open them from
+`scripts/serve.py`.
+
+- **Piece gallery**: http://localhost:8088/tools/piece-gallery.html.
+  It shows all 27 pieces, grouped by size, in their game colours with
+  their rotation states. Pieces in `EXCLUDED_PIECES` are marked. Pick a
+  bank (1 to 8) to see each piece's weight and share of the bag, plus the
+  3-, 4- and 5-cell shares. Click pieces to propose keeping or dropping
+  them; the page prints the whole `export const EXCLUDED_PIECES = [...];` line with a Copy
+  button, to paste into `js/progression/banks.js` by hand. It imports the
+  game's own modules, so it always shows the real data. If you opened the
+  game on localhost before, its service worker may serve cached modules;
+  the page says so when that happens.
 
 ## Documentation
 

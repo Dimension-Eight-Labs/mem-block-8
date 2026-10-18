@@ -5,9 +5,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PIECES, getPieceById, groupPiecesBySize, validateWeights } from '../js/engine/index.js';
 import {
-  BANK_TABLE, GRAVITY_RAMP, PENTOMINO_TIERS, getBank, gravityForBank,
+  PIECES, getPieceById, groupPiecesBySize, validateWeights, createBag, createRng, createGame,
+} from '../js/engine/index.js';
+import {
+  BANK_TABLE, GRAVITY_RAMP, PENTOMINO_TIERS, EXCLUDED_PIECES, withoutExcluded, getBank, gravityForBank,
   LINE_CLEAR_POINTS, lineClearPoints, isFullWord, dropPoints, createProgress,
   CHIPS_PER_CLEAR, CHIP_VALUE, chipsForClear, cashInPoints,
 } from '../js/progression/index.js';
@@ -26,10 +28,59 @@ test('every weight table references only real piece ids and is valid', () => {
   }
 });
 
-test('pentomino tiers cover every pentomino exactly once', () => {
+test('pentomino tiers and the excluded list cover every pentomino exactly once', () => {
   const tiers = [...PENTOMINO_TIERS.easy, ...PENTOMINO_TIERS.medium, ...PENTOMINO_TIERS.hard];
-  assert.deepEqual([...tiers].sort(), idsOfSize(5).sort());
-  assert.equal(new Set(tiers).size, tiers.length);
+  assert.deepEqual([...tiers, ...EXCLUDED_PIECES].sort(), idsOfSize(5).sort());
+  assert.equal(new Set([...tiers, ...EXCLUDED_PIECES]).size, tiers.length + EXCLUDED_PIECES.length);
+});
+
+// --- the curated pool ---------------------------------------------------------------
+
+test('excluded pieces: X5, V5, W5, F5, F5m, Z5, Z5m, still defined in the engine', () => {
+  assert.deepEqual([...EXCLUDED_PIECES].sort(), ['F5', 'F5m', 'V5', 'W5', 'X5', 'Z5', 'Z5m']);
+  assert.ok(Object.isFrozen(EXCLUDED_PIECES));
+  for (const id of EXCLUDED_PIECES) assert.ok(getPieceById(id), `${id} is still an engine piece`);
+  assert.equal(PIECES.length, 27);
+});
+
+test('weight tables only reference allowed ids, in every bank', () => {
+  for (let bank = 1; bank <= 40; bank++) {
+    for (const id of Object.keys(getBank(bank).weights)) {
+      assert.ok(!EXCLUDED_PIECES.includes(id), `bank ${bank} lists ${id}`);
+    }
+  }
+});
+
+test('an excluded id added to a table by mistake is removed', () => {
+  assert.deepEqual(withoutExcluded({ O4: 2, X5: 3, V5: 1, I5: 1 }), { O4: 2, I5: 1 });
+});
+
+test('no bank ever deals an excluded piece: bags across banks and seeds', () => {
+  for (let bank = 1; bank <= 8; bank++) {
+    const { weights } = getBank(bank);
+    const size = Object.values(weights).reduce((a, b) => a + b, 0);
+    for (const seed of [1, 2, 3, 99]) {
+      const bag = createBag(createRng(seed), weights);
+      for (let i = 0; i < size * 5; i++) {
+        const id = PIECES[bag.next()].id;
+        assert.ok(!EXCLUDED_PIECES.includes(id), `bank ${bank} seed ${seed} dealt ${id}`);
+      }
+    }
+  }
+  // And through a whole game with the engine dealing (spawn + preview).
+  const game = createGame({ seed: 7, weights: getBank(5).weights });
+  const seen = new Set();
+  for (let i = 0; i < 400; i++) {
+    const state = game.getState();
+    if (state.active) seen.add(state.active.id);
+    for (const p of state.preview) seen.add(p.id);
+    if (state.phase === 'gameOver') break;
+    game.hardDrop();
+    for (let t = 0; t < 40; t++) game.step();
+    game.drainEvents();
+  }
+  for (const id of EXCLUDED_PIECES) assert.ok(!seen.has(id), `dealt ${id}`);
+  assert.ok(seen.size > 5);
 });
 
 test('bank 1 deals only trominoes and tetrominoes', () => {
@@ -44,7 +95,7 @@ test('banks 2 and 3 add the easy, then the medium pentominoes at low weight', ()
   const three = getBank(3).weights;
   assert.deepEqual(
     inMix(three).filter((id) => getPieceById(id).size === 5).sort(),
-    ['I5', 'L5', 'L5m', 'P5', 'P5m', 'T5', 'U5', 'V5', 'Y5', 'Y5m'],
+    ['I5', 'L5', 'L5m', 'P5', 'P5m', 'T5', 'U5', 'Y5', 'Y5m'],
   );
   for (const weights of [two, three]) {
     const tetromino = weights.T4;
@@ -54,17 +105,21 @@ test('banks 2 and 3 add the easy, then the medium pentominoes at low weight', ()
   }
 });
 
-test('bank 4 has every pentomino, the hard ones at low weight', () => {
+const DEALT_PENTOMINOES = idsOfSize(5).filter((id) => !EXCLUDED_PIECES.includes(id));
+
+test('bank 4 has every dealt pentomino, all at 2', () => {
   const weights = getBank(4).weights;
-  assert.deepEqual(inMix(weights).filter((id) => getPieceById(id).size === 5).sort(), idsOfSize(5).sort());
-  for (const id of PENTOMINO_TIERS.hard) {
-    assert.ok(weights[id] < weights.I5, `${id} lower than the earlier pentominoes`);
-  }
+  assert.deepEqual(inMix(weights).filter((id) => getPieceById(id).size === 5).sort(), DEALT_PENTOMINOES.sort());
+  for (const id of DEALT_PENTOMINOES) assert.equal(weights[id], 2, id);
+  assert.equal(Object.values(weights).reduce((a, b) => a + b, 0), 38);
 });
 
-test('bank 5 and beyond: the full mix at final weights', () => {
+test('bank 5 and beyond: every allowed piece, medium and hard pentominoes at 3', () => {
   const five = getBank(5).weights;
-  assert.equal(inMix(five).length, PIECES.length);
+  assert.equal(inMix(five).length, PIECES.length - EXCLUDED_PIECES.length);
+  for (const id of PENTOMINO_TIERS.easy) assert.equal(five[id], 2, id);
+  for (const id of [...PENTOMINO_TIERS.medium, ...PENTOMINO_TIERS.hard]) assert.equal(five[id], 3, id);
+  assert.equal(Object.values(five).reduce((a, b) => a + b, 0), 44);
   assert.deepEqual(getBank(6).weights, five);
   assert.deepEqual(getBank(40).weights, five);
 });

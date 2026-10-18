@@ -87,17 +87,18 @@ test('handshake: about 2.7 s in four parts, in order, that develop rather than r
     assert.ok(Math.abs(lengths[part] - want) <= 0.1, `${part} ${lengths[part]}`);
   }
   const [exchange, scrambled, training, settle] = parts;
-  // Carrier exchange: steady 1200 + 2400 Hz, then an unscrambled tone pattern.
+  // Carrier exchange: steady 1200 + 2400 Hz, then the FSK pattern.
   assert.deepEqual(exchange.segs[0].freqs, [1200, 2400]);
   assert.ok(exchange.segs.slice(1).length >= 4 && exchange.segs.slice(1).every((s) => s.kind === 'tone'));
-  // Scrambled: a warbling, drifting carrier under noise bursts whose centre keeps moving.
-  const warble = scrambled.segs.filter((s) => s.kind === 'tone');
-  assert.ok(warble.length >= 2 && warble.every((s) => s.am && s.sweepTo));
-  const centres = scrambled.segs.filter((s) => s.kind === 'noise').map((s) => s.filter.freq);
-  assert.ok(centres.length >= 4 && new Set(centres).size === centres.length, 'shifting tone, not one repeated burst');
+  // Scrambled: Stage 5's burst first (1800, 1200, 2400 Hz bands), then
+  // stuttering bursts that switch between those bands.
+  const bursts = scrambled.segs.filter((s) => s.kind === 'noise');
+  assert.deepEqual(bursts.slice(0, 3).map((s) => s.filter.freq), [1800, 1200, 2400]);
+  assert.ok(bursts.length >= 8, 'chopped up, not one long burst');
+  assert.ok(bursts.every((s) => [1200, 1800, 2400].includes(s.filter.freq)), 'noise around the carriers');
+  for (let i = 1; i < bursts.length; i++) assert.ok(bursts[i].start >= bursts[i - 1].start + bursts[i - 1].duration - 1e-9, 'separate bursts');
   // Training: broader (lower Q) and smoother (slower edges) than the screech.
   const hiss = training.segs.find((s) => s.kind === 'noise');
-  const bursts = scrambled.segs.filter((s) => s.kind === 'noise');
   assert.ok(hiss.filter.q < Math.min(...bursts.map((s) => s.filter.q)));
   assert.ok(hiss.attack > Math.max(...bursts.map((s) => s.attack)));
   // Settle: a near-silent hush.
@@ -128,6 +129,16 @@ test('modem: no two tones overlap within a phase', () => {
       }
     }
   }
+});
+
+test('handshake: no pitch movement (no glides, sweeps, vibrato, or warble), fixed carriers', () => {
+  const handshake = MODEM_SCHEDULE.filter((s) => s.phase === 'handshake');
+  for (const s of handshake) {
+    assert.equal(s.sweepTo, undefined, `glide in ${s.part}`);
+    assert.equal(s.am, undefined, `warble in ${s.part}`);
+  }
+  const carriers = new Set(handshake.filter((s) => s.kind === 'tone').flatMap((s) => s.freqs));
+  for (const hz of [1200, 2400, 1800]) assert.ok(carriers.has(hz), `${hz} Hz carrier`);
 });
 
 test('modem: 5 to 5.5 seconds long, ends cleanly, every segment playable', () => {
@@ -293,8 +304,8 @@ test('transition: the modem plus the READY moment with sound on; 4000 ms, READY 
   assert.deepEqual(off, { readyAtMs: 4000 - 900, durationMs: 4000 });
   const on = transitionTiming(true, screens);
   // READY appears as the call ends (never over it), then the READY moment.
-  assert.equal(on.readyAtMs, Math.ceil((MODEM_LEAD_IN + MODEM_DURATION) * 1000));
-  assert.ok(on.readyAtMs >= (MODEM_LEAD_IN + MODEM_DURATION) * 1000);
+  assert.equal(on.readyAtMs, 5575);
+  assert.ok(on.readyAtMs >= (MODEM_LEAD_IN + MODEM_DURATION) * 1000 - 1e-6);
   assert.equal(on.durationMs, on.readyAtMs + SCREENS.bankReadyMs);
   assert.equal(on.durationMs, 6475);
   // The skip rule is unchanged, and skipping is possible well before the end.
@@ -375,4 +386,14 @@ test('tracks: every playlist file exists, is in assets/music, and is credited', 
   // Only the first track is pre-cached with the app shell.
   assert.ok(sw.includes(`'./${TRACKS[0].url}'`));
   for (const t of TRACKS.slice(1)) assert.ok(!sw.includes(`'./${t.url}'`), t.url);
+});
+
+test('rewards stand above the lock click and the line chirp (playtest pass 2)', () => {
+  const loudest = (name, event) => Math.max(...buildEffect(name, event).map((s) => s.gain));
+  for (const [name, event] of [['chips', { count: 1 }], ['tally', { steps: 3, stepMs: 60 }], ['tallyDone', {}]]) {
+    assert.ok(loudest(name, event) > loudest('lock') * 1.3, `${name} over the lock click`);
+    assert.ok(loudest(name, event) > loudest('lineClear', { count: 5 }) * 2, `${name} over the chirp`);
+    // Each note is doubled an octave up, for presence over the music.
+    assert.ok(buildEffect(name, event).every((s) => s.freqs.length === 2 && s.freqs[1] === s.freqs[0] * 2), name);
+  }
 });

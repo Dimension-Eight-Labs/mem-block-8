@@ -21,6 +21,10 @@
     js/touch-guard.js. See docs/ARCHITECTURE.md, "Touch rules".
   -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <!--
+    theme-color and the manifest colours stay: iOS 27 ignores them, but
+    Android and desktop browsers still colour their bars from them.
+  -->
   <meta name="theme-color" content="#0a0b10">
   <meta name="color-scheme" content="dark">
   <meta name="description" content="Mem Block 8 - an offline falling-block memory game from DIM8 Labs.">
@@ -28,7 +32,15 @@
   <!-- iPhone home screen install -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <!--
+    No apple-mobile-web-app-status-bar-style on purpose: a WORKAROUND for
+    WebKit bug 325807, not an Apple-documented fix. iOS 27 blurs anything
+    drawn under a translucent status bar in installed web apps, and page
+    CSS cannot remove the blur. Without the meta, iOS draws a solid bar and
+    starts the web view below it, sampling the bar's colour from #topfix.
+    Do not add the meta back until Apple fixes the bug. See
+    docs/ARCHITECTURE.md, "iOS status bar".
+  -->
   <meta name="apple-mobile-web-app-title" content="MemBlock8">
   <!-- iOS ignores SVG touch icons; a PNG apple-touch-icon arrives in Stage 7. -->
   <link rel="apple-touch-icon" href="assets/icons/icon.svg">
@@ -45,6 +57,12 @@
   <title>Mem Block 8</title>
 </head>
 <body>
+  <!--
+    Solid strip at the top edge for iOS to sample the status bar colour
+    from (installed app only; see the status-bar note in <head>). It sits
+    outside #app, so the touch guards and game gestures never see it.
+  -->
+  <div id="topfix" aria-hidden="true"></div>
   <main class="app" id="app">
     <!-- The title is shown on the start screen; the header holds the HUD. -->
     <h1 class="visually-hidden">Mem Block 8</h1>

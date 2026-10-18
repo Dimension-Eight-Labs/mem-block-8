@@ -1,0 +1,183 @@
+<!doctype html>
+<!--
+  tools/piece-gallery.html - Developer tool: every piece shape, its rotation
+  states, its share of each bank's bag, and a keep/drop proposal that prints
+  the EXCLUDED_PIECES declaration line. Not part of the game (not linked, not cached by
+  sw.js). Open http://localhost:8088/tools/piece-gallery.html via
+  scripts/serve.py. Logic: tools/piece-gallery.js.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Piece Gallery</title>
+  <style>
+    /* The game's bundled IBM Plex Mono (css/main.css), falling back to system monospace. */
+    @font-face {
+      font-family: "IBM Plex Mono";
+      font-weight: 400;
+      font-display: swap;
+      src: url("../assets/fonts/IBMPlexMono-Regular-Latin1.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono";
+      font-weight: 600;
+      font-display: swap;
+      src: url("../assets/fonts/IBMPlexMono-SemiBold-Latin1.woff2") format("woff2");
+    }
+
+    /* Colours match the game's tokens in css/main.css. */
+    :root {
+      --bg: #0a0b10;
+      --raised: #14161f;
+      --well: #10142a;
+      --text: #d8dee9;
+      --dim: #6b7385;
+      --green: #39ff9f;
+      --red: #ff5a6a;
+      --amber: #ffb84d;
+      --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 var(--mono);
+    }
+
+    h1 { margin: 0 0 4px; font-size: 20px; color: var(--green); }
+    h2 { margin: 24px 0 8px; font-size: 15px; color: var(--green); font-weight: 600; }
+    p { margin: 4px 0; color: var(--dim); max-width: 72ch; }
+
+    .bar {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      margin: 12px -16px 0;
+      padding: 10px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid #1f2a24;
+    }
+
+    .bar label { color: var(--green); }
+
+    select, button, input {
+      font: inherit;
+      color: var(--text);
+      background: var(--raised);
+      border: 1px solid #2c3242;
+      border-radius: 4px;
+      padding: 6px 10px;
+    }
+
+    #bank-summary, #proposal-summary { color: var(--text); margin-top: 6px; }
+    #proposal-summary { color: var(--amber); }
+    #sw-note { color: var(--amber); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 8px;
+      text-align: center;
+      background: var(--well);
+      border: 2px solid #26304f;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .card:hover { border-color: var(--green); }
+    .card:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+    .card-head { display: flex; justify-content: space-between; width: 100%; }
+    .piece-id { color: var(--green); font-weight: 600; font-size: 16px; }
+    .piece-size { color: var(--dim); }
+
+    /* Current game state: a solid red tag. */
+    .tag {
+      position: absolute;
+      top: 34px;
+      right: 6px;
+      padding: 1px 5px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 3px;
+    }
+    .tag-excluded { background: var(--red); color: #10000a; }
+
+    .rotations { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+    .rotation { margin: 0; }
+    .rotation figcaption { font-size: 10px; color: var(--dim); }
+
+    .stats { display: flex; justify-content: space-between; width: 100%; font-size: 12px; }
+    .weight { color: var(--dim); }
+    .share { color: var(--text); }
+
+    .proposal { font-size: 12px; color: var(--green); }
+
+    /* Proposal state: a dashed amber border and faded drawing, distinct from the red EXCLUDED tag. */
+    .card.drop { border: 2px dashed var(--amber); background: #1a1508; }
+    .card.drop canvas { opacity: 0.5; }
+    .card.drop .proposal { color: var(--amber); font-weight: 600; }
+
+    .output { margin-top: 24px; }
+    .copy-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* On a phone the bar's summaries would cover too much of the screen if it stuck. */
+    @media (max-width: 600px) {
+      .bar { position: static; }
+    }
+
+    #line { flex: 1 1 320px; min-width: 0; color: var(--green); }
+    #diff, #copy-status { color: var(--dim); }
+    .note { color: var(--amber); }
+    code { color: var(--green); }
+  </style>
+</head>
+<body>
+  <h1>Piece gallery</h1>
+  <p>Developer tool. Every piece the engine defines, drawn from the game's own data. Click a piece to
+    propose keeping or dropping it; this only builds the line below, it never changes the game.</p>
+  <p>Legend: <span style="color: var(--red)">EXCLUDED</span> = in the game's EXCLUDED_PIECES now.
+    <span style="color: var(--amber)">Dashed amber</span> = proposed drop. Rotation thumbnails are labelled
+    with their states (0 = spawn, clockwise); identical states are shown once.</p>
+  <p id="sw-note" hidden>A service worker controls this page, so the game's modules may be the cached
+    version. Bump CACHE_VERSION or clear site data to see edits.</p>
+
+  <div class="bar">
+    <label for="bank">Bank</label>
+    <select id="bank"></select>
+    <div id="bank-summary"></div>
+    <div id="proposal-summary"></div>
+  </div>
+
+  <main id="gallery"></main>
+
+  <section class="output">
+    <h2>Proposed exclusion list</h2>
+    <div class="copy-row">
+      <input id="line" type="text" readonly aria-label="Proposed EXCLUDED_PIECES line">
+      <button id="copy" type="button">Copy</button>
+      <button id="reset" type="button">Reset to game</button>
+    </div>
+    <p id="copy-status" aria-live="polite"></p>
+    <p id="diff"></p>
+    <p class="note">This replaces the existing <code>export const EXCLUDED_PIECES = [...];</code> line in
+      js/progression/banks.js. Select that whole line and paste over it; do not add it as a new line.</p>
+  </section>
+
+  <script type="module" src="piece-gallery.js"></script>
+</body>
+</html>

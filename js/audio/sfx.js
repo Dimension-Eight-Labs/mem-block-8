@@ -10,7 +10,12 @@
  * side is held, and a sound on each would be tiring.
  *
  * Rewards sound like a computer, not money: square-wave arpeggios and
- * beeps, never bells or a cash register.
+ * beeps, never bells or a cash register. They are the loudest effects
+ * (above the lock click and the line clear chirp), each note doubled an
+ * octave up so it cuts through chiptune music (whose leads sit in the same
+ * square-wave register) and through a phone speaker, which is weak below
+ * about 1 kHz. While one plays, the music ducks (duck, below; done in
+ * js/audio/index.js).
  */
 
 import { tone, noise, scaleGain } from './schedule.js';
@@ -57,22 +62,32 @@ export const EFFECTS = Object.freeze({
   // run to C7 with a long last note: the FULL WORD flourish and the chip
   // reward as one sound. It plays when the chips are awarded, as the
   // cleared rows vanish, after the line clear chirp has finished.
+  // voices: each note sounds at these multiples (1 and 2: plus an octave
+  // up, for presence); attack: a near-instant edge, so each note pings.
   chips: {
-    volume: 0.4,
+    volume: 0.85,
     wave: 'square',
     ladderHz: [523, 659, 784, 1047, 1319, 1568, 2093],
+    voices: [1, 2],
     baseNotes: 2, // notes = baseNotes + chips, up to the whole ladder
-    noteTime: 0.045,
-    lastNoteTime: 0.1,
-    fullWordLastNoteTime: 0.2,
+    noteTime: 0.05,
+    lastNoteTime: 0.12,
+    fullWordLastNoteTime: 0.22,
+    attack: 0.001,
   },
   // Cash-in tally (the READY moment): a short blip per counting step,
   // each a little higher, then the done tone. The steps are rate-limited
   // by the session (SCREENS.chipTallyMaxSteps), so many chips never
   // become a buzz.
-  tally: { volume: 0.3, wave: 'square', hz: 1320, riseHz: 0.05, time: 0.022 },
-  // Done: a two-note "OK" beep, the second note with its octave on top.
-  tallyDone: { volume: 0.4, wave: 'square', notes: [784, 1047], noteTime: 0.07, lastNoteTime: 0.22 },
+  tally: { volume: 0.6, wave: 'square', hz: 1320, riseHz: 0.05, time: 0.022, voices: [1, 2] },
+  // Done: a two-note "OK" beep, each note with its octave on top.
+  tallyDone: { volume: 0.8, wave: 'square', notes: [784, 1047], voices: [1, 2], noteTime: 0.07, lastNoteTime: 0.22, attack: 0.001 },
+  // Music duck while a reward plays: the music bus drops by db over
+  // attack seconds, holds until the reward ends, and comes back over
+  // release seconds. effects: which sounds duck it (only the rewards; the
+  // click, chirp, and modem never do, and music is already off for the
+  // modem). Not a sound itself: buildEffect has no case for it.
+  duck: { db: -10, attack: 0.03, release: 0.25, effects: Object.freeze(['chips', 'tally', 'tallyDone']) },
   // Bank complete: the modem dial-in (phases and timings in js/audio/modem.js).
   modem: { volume: 0.7 },
   // Game over: a busy signal, 480 + 620 Hz, on 0.5 s / off 0.5 s, three times.
@@ -93,10 +108,32 @@ function click(e) {
 }
 
 /**
+ * Every voice of a note: the note at each multiple in voices (no voices:
+ * just the note).
+ * @param {number} hz
+ * @param {readonly number[]} [voices]
+ * @returns {number[]}
+ */
+function voiced(hz, voices = [1]) {
+  return voices.map((v) => hz * v);
+}
+
+/**
+ * The gain of a note: voices share it (js/audio/synth.js splits a tone's
+ * gain between its frequencies), so a doubled note gets twice the gain to
+ * keep each voice as loud as a single one would be.
+ * @param {readonly number[]} [voices]
+ * @returns {number}
+ */
+function noteGain(voices = [1]) {
+  return Math.min(1, 0.45 * voices.length);
+}
+
+/**
  * A run of square-wave notes, one after another; the last one longer.
  * @param {number} start Seconds.
  * @param {number[][]} notes Hz per note (several sound together).
- * @param {{wave: import('./schedule.js').Wave, noteTime: number}} e
+ * @param {{wave: import('./schedule.js').Wave, noteTime: number, voices?: readonly number[], attack?: number}} e
  * @param {number} lastNoteTime
  * @returns {import('./schedule.js').Segment[]}
  */
@@ -104,7 +141,7 @@ function arpeggio(start, notes, e, lastNoteTime) {
   return notes.map((freqs, i) => {
     const last = i === notes.length - 1;
     return tone(start + i * e.noteTime, last ? lastNoteTime : e.noteTime, freqs, {
-      wave: e.wave, gain: 0.45, attack: 0.003, release: last ? 0.08 : 0.01,
+      wave: e.wave, gain: noteGain(e.voices), attack: e.attack ?? 0.003, release: last ? 0.08 : 0.01,
     });
   });
 }
@@ -142,7 +179,7 @@ export function buildEffect(name, event = {}, table = EFFECTS) {
       const all = e.ladderHz.length;
       const count = Math.max(event.count ?? 1, 1);
       const notes = event.fullWord ? all : Math.min(e.baseNotes + count, all);
-      return scaleGain(arpeggio(0, e.ladderHz.slice(0, notes).map((hz) => [hz]), e,
+      return scaleGain(arpeggio(0, e.ladderHz.slice(0, notes).map((hz) => voiced(hz, e.voices)), e,
         event.fullWord ? e.fullWordLastNoteTime : e.lastNoteTime), e.volume);
     }
     case 'tally': {
@@ -151,15 +188,14 @@ export function buildEffect(name, event = {}, table = EFFECTS) {
       const e = table.tally;
       const steps = Math.max(event.steps ?? 1, 1);
       const step = (event.stepMs ?? 60) / 1000;
-      const blips = Array.from({ length: steps }, (_, i) => tone((i + 1) * step, e.time, [e.hz * (1 + e.riseHz * i)], {
-        wave: e.wave, gain: 0.45, attack: 0.002, release: 0.008,
+      const blips = Array.from({ length: steps }, (_, i) => tone((i + 1) * step, e.time, voiced(e.hz * (1 + e.riseHz * i), e.voices), {
+        wave: e.wave, gain: noteGain(e.voices), attack: 0.002, release: 0.008,
       }));
       return [...scaleGain(blips, e.volume), ...shift(buildEffect('tallyDone', event, table), (steps + 1) * step)];
     }
     case 'tallyDone': {
       const e = table.tallyDone;
-      const [first, last] = e.notes;
-      return scaleGain(arpeggio(0, [[first], [last, last * 2]], e, e.lastNoteTime), e.volume);
+      return scaleGain(arpeggio(0, e.notes.map((hz) => voiced(hz, e.voices)), e, e.lastNoteTime), e.volume);
     }
     case 'modem':
       return scaleGain(MODEM_SCHEDULE, table.modem.volume);

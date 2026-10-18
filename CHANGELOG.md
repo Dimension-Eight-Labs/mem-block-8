@@ -4,6 +4,127 @@
 Every stage, and every significant change between stages, adds an entry
 here (see CONTRIBUTING.md).
 
+## 0.5.3 - iOS 27 status bar blur workaround
+
+Version 0.5.3 (`CACHE_VERSION` `v0.5.3`).
+
+- **Problem:** iOS 27 blurs anything drawn under a translucent status bar
+  in installed home screen web apps (WebKit bug 325807). Page CSS cannot
+  remove it.
+- **Workaround** (not an Apple-documented fix; see ARCHITECTURE, "iOS
+  status bar"):
+  - Removed `apple-mobile-web-app-status-bar-style` (`black-translucent`)
+    from `index.html`, so iOS draws a solid bar and the web view starts
+    below it. `theme-color` and the manifest colours stay for Android and
+    desktop.
+  - Added `#topfix`, a 12 px strip in `var(--color-surround)` at the top
+    edge for iOS to sample the bar colour from. It shows in standalone
+    mode only, sits outside `#app` and below it (`.app` gets `z-index: 1`),
+    and takes no touches.
+- **Layout:** `.app`'s top padding (`env(safe-area-inset-top)` +
+  `--space-2`) was the only use of the top inset. It is kept, so the header
+  sits 8 px from the top now that the inset is 0, and still clears the notch
+  if an older iOS reports an inset. Nothing sized from `100vh`,
+  `screen.height`, or `innerHeight`: `html` and `body` were already
+  `height: 100%`, with `body` fixed to `inset: 0`. No sizing change was
+  needed.
+- **Test:** `tests/status-bar.test.js` checks for no status-bar-style
+  meta, `#topfix` as body's first child, and the standalone rule using a
+  CSS variable.
+- **iPhone:** delete the app from the home screen and add it again from
+  Safari after deploying, because iOS reads the setting only at install.
+
+## Piece pool: Z5 and Z5m excluded
+
+No version bump.
+
+- **`EXCLUDED_PIECES`** is now `X5`, `V5`, `W5`, `F5`, `F5m`, `Z5`, `Z5m`.
+  The owner chose Z5 and Z5m with the piece gallery, because the upper
+  banks were still unplayable. It is written on one line in exactly the
+  form the gallery prints, and frozen in a separate statement.
+- **Bank tables:** Z5 and Z5m are out of the hard tier, so the tables list
+  only what is dealt. Banks 4 and 5+ shrink from 42 and 50 pieces to 38
+  and 44; pentominoes are now 58% and 64% of the bag (were 62% and 68%).
+  Nothing else was rebalanced; a separate difficulty pass is coming.
+- **Piece gallery:** the Copy line is now the whole declaration
+  (`export const EXCLUDED_PIECES = [...];`), with a note to paste it over
+  the existing line. Before, it printed an assignment, and pasting that
+  under the declaration reassigned the constant ("Assignment to constant
+  variable").
+- **Tests** (`tests/progression.test.js`): the expected excluded list
+  includes Z5 and Z5m and checks the list is frozen; the bank 4 and 5 bag
+  sizes are 38 and 44.
+
+## Developer tool - piece gallery
+
+No version bump: the game is unchanged.
+
+- **`tools/piece-gallery.html`** and **`tools/piece-gallery.js`**: shows
+  every piece side by side, to help decide which ones the game deals.
+  Upper banks felt unplayable in playtesting because the odd pentominoes
+  force too many incomplete rows.
+- It imports the pieces, rotation states, bank tables, `EXCLUDED_PIECES`,
+  the palette and the block shading from the game's modules, so no data
+  is copied.
+- It marks excluded pieces and shows weights and bag shares for banks 1 to
+  8. Click pieces to build a proposed `EXCLUDED_PIECES` line to copy.
+- It is not linked from the game, not in `APP_SHELL`, and not cached. See
+  README, "Developer tools".
+
+## Playtest pass 2 - modem screech restored, curated piece pool, audible rewards
+
+Version 0.5.2 (`CACHE_VERSION` `v0.5.2`; music unchanged, `music-v2`).
+
+### Playtest findings (iPhone)
+
+1. Pass 1's handshake no longer sounded like a modem (the scrambled data
+   sounded like a cartoon spaceship); Stage 5's was right, only short.
+2. X5 and V5 were bad for play; W5 and F5 / F5m are similarly awkward.
+3. The chip reward sound did not come through over the music.
+
+### Changed
+
+- **Modem handshake** rebuilt from the Stage 5 sound, still 2.7 s (whole
+  call 5.275 s; READY at 5575 ms, transition 6475 ms, as before). Carrier
+  exchange: Stage 5's carriers and FSK flips. Scrambled data: Stage 5's
+  burst (1800, 1200, 2400 Hz noise bands over a steady 1800 Hz carrier),
+  then the same bands chopped into stuttering bursts with level jumps and
+  hard band switches. Training hiss and settle keep their roles, with fixed
+  carriers. **Rule, commented in `modem.js` and tested: no pitch movement
+  in the handshake** (no glides, sweeps, vibrato, or warble).
+- `transitionTiming` rounds before its ceiling, so float dust in the
+  schedule's sum cannot add a millisecond.
+- **Curated piece pool:** `EXCLUDED_PIECES` (`X5`, `V5`, `W5`, `F5`, `F5m`)
+  in `js/progression/banks.js`; every table passes through
+  `withoutExcluded`, so they cannot be dealt even if listed by mistake.
+  All 27 pieces stay in the engine. Tiers now: easy I5 L5 L5m P5 P5m,
+  medium T5 U5 Y5 Y5m, hard N5 N5m Z5 Z5m. Bank 4: all nine earlier
+  pentominoes and the four hard ones at 2 (bag 42). Bank 5+: easy at 2,
+  medium and hard at 3 (bag 50). Pentomino share by bank: 0, 24, 36, 62,
+  68% (was 0, 24, 38, 64, 69).
+- **Reward sounds:** chips, tally blips, and the done tone are doubled an
+  octave up and much louder (chips volume 0.4 -> 0.85, tally 0.3 -> 0.6,
+  done 0.4 -> 0.8; chips notes 50 ms with a 1 ms attack). Rendered, the
+  chips sound's loudest 50 ms went from -18.9 to -9.4 dBFS, against the
+  chirp's -17.8 and the lock click's -21.5.
+- **Music duck** under rewards: -10 dB, 30 ms down, back over 250 ms after
+  the sound (`EFFECTS.duck`), on the music bus.
+- **`?debug=1`** logs every sound effect next to the gestures: played (with
+  the AudioContext state and "duck") or not (sfx off, no audio, hidden).
+  Log length 8 -> 12 lines.
+- Tests: 297 (was 285): no pitch movement in the handshake and its new
+  parts; the excluded list, tables, and bags across banks and seeds, and a
+  dealt game; duck settings and the façade ducking for rewards only; the
+  chirp and chips in the same tick; chips after hide/show; the debug log
+  lines; rewards louder than the click and chirp.
+
+### Diagnosis: the chip sound
+
+It fired every time (unit tests, and the browser: after the chirp,
+after pause and resume, after hide and show). It was masked: 1 dB quieter
+than the chirp just before it, with fundamentals at 523 to 784 Hz where
+chiptune leads play and where a phone speaker is weakest, in 45 ms notes.
+
 ## Playtest pass 1 - wording, READY moment, microchips, reward sounds, music trim
 
 Version 0.5.1 (`CACHE_VERSION` `v0.5.1`, `MUSIC_CACHE_VERSION` `v2`).

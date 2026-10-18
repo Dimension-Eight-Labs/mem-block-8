@@ -6,6 +6,10 @@
  * weighted bag). Difficulty ramps first through the mix (banks 1-5 bring in
  * pentominoes, easiest first), then through fall speed (bank 6 onwards).
  *
+ * The pool is curated: a few pentominoes are never dealt (EXCLUDED_PIECES).
+ * Their definitions stay in the engine (tests use them, and a hard mode
+ * might); the tables here simply cannot contain them.
+ *
  * ALL VALUES ARE FIRST-PASS, to be tuned by playtesting. Edit BANK_TABLE
  * and GRAVITY_RAMP; the tests check the table's shape (real piece ids,
  * monotonic and floored gravity), not these exact numbers.
@@ -47,15 +51,41 @@ function each(ids, weight) {
   return Object.fromEntries(ids.map((id) => [id, weight]));
 }
 
-/** Pentominoes in the order they are introduced, easiest first. */
+/**
+ * Pieces no bank ever deals: awkward to place, found in iPhone
+ * playtesting (pass 2). X5 (the plus) and V5 (the 3 x 3 corner) were
+ * called out; W5 (the staircase) and F5 / F5m are just as awkward. They
+ * leave holes that no other piece fills, so they punish more than they
+ * challenge. Z5 and Z5m were excluded after further playtesting with
+ * the piece gallery (tools/piece-gallery.html). Remove an id here to deal
+ * it again (it then also needs a weight in a table below).
+ *
+ * The declaration stays on one line in exactly the form the gallery
+ * prints, so its output replaces this line as it stands; the freeze is a
+ * separate statement for that reason.
+ */
+export const EXCLUDED_PIECES = ['X5', 'V5', 'W5', 'F5', 'F5m', 'Z5', 'Z5m'];
+Object.freeze(EXCLUDED_PIECES);
+
+/** The dealt pentominoes in the order they are introduced, easiest first. */
 export const PENTOMINO_TIERS = Object.freeze({
   // Bank 2: straight and simple bent shapes.
   easy: Object.freeze(['I5', 'L5', 'L5m', 'P5', 'P5m']),
   // Bank 3: symmetric or near-symmetric shapes.
-  medium: Object.freeze(['T5', 'U5', 'V5', 'Y5', 'Y5m']),
-  // Bank 4: the awkward, jagged shapes.
-  hard: Object.freeze(['F5', 'F5m', 'N5', 'N5m', 'W5', 'X5', 'Z5', 'Z5m']),
+  medium: Object.freeze(['T5', 'U5', 'Y5', 'Y5m']),
+  // Bank 4: the jagged shapes (the hard tier, after EXCLUDED_PIECES).
+  hard: Object.freeze(['N5', 'N5m']),
 });
+
+/**
+ * A weight table with the excluded pieces taken out, so they can never be
+ * dealt even if one is added to a table by mistake.
+ * @param {Record<string, number>} weights
+ * @returns {Record<string, number>}
+ */
+export function withoutExcluded(weights) {
+  return Object.fromEntries(Object.entries(weights).filter(([id]) => !EXCLUDED_PIECES.includes(id)));
+}
 
 /** Every bank's small pieces: trominoes 1 each, tetrominoes 2 each (16 per bag). */
 const SMALL = Object.freeze({ ...allOfSize(3, 1), ...allOfSize(4, 2) });
@@ -63,7 +93,10 @@ const SMALL = Object.freeze({ ...allOfSize(3, 1), ...allOfSize(4, 2) });
 /**
  * Banks 1 to 5. Bank 6 and beyond reuse bank 5's mix with faster gravity
  * (see GRAVITY_RAMP). "Low weight" means 1 per bag against 2 per bag for
- * the tetrominoes. Bag sizes: 16, 21, 26, 44, 52 pieces.
+ * the tetrominoes. Bag sizes: 16, 21, 25, 38, 44 pieces; pentominoes are
+ * 0%, 24%, 36%, 58%, 64% of each bag. Excluding Z5 and Z5m took their
+ * weights out of banks 4 and 5 (from 42 and 50, 62% and 68%) without
+ * rebalancing the rest; the next difficulty pass tunes these.
  * @type {readonly Readonly<Omit<BankSettings, 'bank'>>[]}
  */
 export const BANK_TABLE = Object.freeze([
@@ -79,14 +112,15 @@ export const BANK_TABLE = Object.freeze([
     gravityMsPerRow: 900,
     weights: { ...SMALL, ...each(PENTOMINO_TIERS.easy, 1) },
   },
-  // Bank 3: adds T5, U5, V5, Y5, Y5m, also at low weight.
+  // Bank 3: adds T5, U5, Y5, Y5m, also at low weight.
   {
     linesToComplete: 10,
     gravityMsPerRow: 900,
     weights: { ...SMALL, ...each(PENTOMINO_TIERS.easy, 1), ...each(PENTOMINO_TIERS.medium, 1) },
   },
-  // Bank 4: all pentominoes; the earlier ones rise to 2, the hard ones
-  // arrive at low weight. First speed-up.
+  // Bank 4: every dealt pentomino; the earlier ones rise to 2 and the hard
+  // ones (N5, N5m) arrive at 2 as well: they stand in for the excluded
+  // shapes, which used to be most of the hard tier. First speed-up.
   {
     linesToComplete: 10,
     gravityMsPerRow: 750,
@@ -94,16 +128,22 @@ export const BANK_TABLE = Object.freeze([
       ...SMALL,
       ...each(PENTOMINO_TIERS.easy, 2),
       ...each(PENTOMINO_TIERS.medium, 2),
-      ...each(PENTOMINO_TIERS.hard, 1),
+      ...each(PENTOMINO_TIERS.hard, 2),
     },
   },
-  // Bank 5: the full mix, every pentomino at its final weight of 2.
+  // Bank 5: the full mix at final weights. The medium and hard tiers go to
+  // 3, so the pentomino share keeps rising as it did with the full set.
   {
     linesToComplete: 10,
     gravityMsPerRow: 750,
-    weights: { ...SMALL, ...allOfSize(5, 2) },
+    weights: {
+      ...SMALL,
+      ...each(PENTOMINO_TIERS.easy, 2),
+      ...each(PENTOMINO_TIERS.medium, 3),
+      ...each(PENTOMINO_TIERS.hard, 3),
+    },
   },
-].map((bank) => Object.freeze({ ...bank, weights: Object.freeze(bank.weights) })));
+].map((bank) => Object.freeze({ ...bank, weights: Object.freeze(withoutExcluded(bank.weights)) })));
 
 /**
  * Gravity after the table runs out. Each bank past the last table entry

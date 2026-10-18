@@ -162,5 +162,5 @@ export const SCREENS = Object.freeze({
   fullWordMs: 1400,
 });
 
-/** Debug overlay (?debug=1): how many recent gestures to list. */
-export const DEBUG_LOG_LENGTH = 8;
+/** Debug overlay (?debug=1): how many recent gestures and sound effects to list. */
+export const DEBUG_LOG_LENGTH = 12;

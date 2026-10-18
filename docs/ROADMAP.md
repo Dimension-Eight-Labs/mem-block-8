@@ -28,6 +28,11 @@
   (earned by multi-row clears, cashed in at bank complete, lost at game
   over) with a chip flash, a CHP register, a cash-in tally, and reward
   sounds, and Iced Village cut to a 2:24 loop.
+- [x] **Playtest pass 2 (0.5.2).** The modem handshake rebuilt from the
+  Stage 5 sound at 2.7 s with no pitch movement; a curated piece pool (X5,
+  V5, W5, F5, F5m never dealt; banks 4 and 5 rebalanced); louder reward
+  sounds with an octave voice, a music duck under them, and sound effects
+  in the `?debug=1` log.
 - [ ] **6 - Era themes and DIM8 branding.** Era themes (with their own bank
   tints) and logo options, added to the settings screen.
 - [ ] **7 - PWA polish.** Offline caching (including music), icons, iPhone
@@ -60,9 +65,13 @@
 - **Audio on a real iPhone.** Gesture unlock, silent switch ("ambient"
   audio session), gapless loops (does WebKit trim the MP3 padding, or does
   the fallback loop point kick in? and the Iced Village wrap), memory, the
-  modem's longer handshake, and the reward sounds. Effect volumes and the
+  rebuilt handshake, and whether the reward sounds and the music duck now
+  come through (use `?debug=1` to see each sound fire). Effect volumes and the
   music level are first-pass (`EFFECTS` in `js/audio/sfx.js`, `MIX` in
   `js/audio/context.js`).
+- **Piece pool.** Whether the curated pool (22 pieces) and the bank 4
+  and 5 weights feel right; whether a later bank or a hard mode should
+  deal the excluded shapes.
 - **Microchip tuning.** The chips table and `CHIP_VALUE`
   (`js/progression/chips.js`) and the tally and READY timings (`SCREENS`)
   are first-pass.

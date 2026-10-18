@@ -35,6 +35,19 @@ no leaderboards.
   [Memory banks](#memory-banks-levels)).
   - Early banks: trominoes and tetrominoes only.
   - Pentominoes are introduced progressively, harder shapes later.
+- **Curated pool (playtest pass 2, then the piece gallery):** seven
+  pentominoes are never dealt: `X5` (the plus), `V5` (the 3 x 3 corner),
+  `W5` (the staircase), `F5` / `F5m`, and `Z5` / `Z5m`. iPhone playtesting
+  found the first five awkward to place: they leave holes no other piece
+  fills, so they punish more than they challenge. The upper banks were
+  still unplayable with them gone (too many incomplete rows), and after
+  comparing every shape in the piece gallery (`tools/piece-gallery.html`)
+  the owner excluded `Z5` and `Z5m` as well. They stay
+  defined in the engine (tests use them; a hard mode might deal them), but
+  `EXCLUDED_PIECES` in `js/progression/banks.js` keeps them out of every
+  bank: the tables are built so an excluded id is dropped even if added
+  by mistake. Removing an id from that list re-enables it. 20 pieces are
+  dealt.
 - **Difficulty ramp order:** difficulty first increases through the piece
   mix; once the full mix is in play, it increases through fall speed.
 
@@ -122,10 +135,17 @@ playtesting.
 | --- | --- | --- | --- | --- |
 | 1 | 10 | 900 | Trominoes 1 each, tetrominoes 2 each | 16 |
 | 2 | 10 | 900 | + `I5`, `L5`, `L5m`, `P5`, `P5m` at 1 each | 21 |
-| 3 | 10 | 900 | + `T5`, `U5`, `V5`, `Y5`, `Y5m` at 1 each | 26 |
-| 4 | 10 | 750 | Those ten pentominoes rise to 2; `F5`, `F5m`, `N5`, `N5m`, `W5`, `X5`, `Z5`, `Z5m` arrive at 1 | 44 |
-| 5 | 10 | 750 | Full mix: every pentomino at its final weight of 2 | 52 |
-| 6+ | 10 | x0.8 per bank, floor 60 | Same as bank 5 | 52 |
+| 3 | 10 | 900 | + `T5`, `U5`, `Y5`, `Y5m` at 1 each | 25 |
+| 4 | 10 | 750 | Those nine pentominoes rise to 2; `N5`, `N5m` arrive at 2 | 38 |
+| 5 | 10 | 750 | Full mix: easy pentominoes (`I5`, `L5`, `L5m`, `P5`, `P5m`) at 2, the rest (`T5`, `U5`, `Y5`, `Y5m`, `N5`, `N5m`) at 3 | 44 |
+| 6+ | 10 | x0.8 per bank, floor 60 | Same as bank 5 | 44 |
+
+Pentominoes make up 0, 24, 36, 58, and 64% of the bag in banks 1 to 5.
+Excluding `Z5` and `Z5m` simply took their weights out of banks 4 and 5
+(which were 42 and 50 pieces, 62% and 68% pentominoes); the other weights
+are unchanged until the coming difficulty pass. The jagged N pentominoes
+arrive at full weight in bank 4 and carry more weight in bank 5, standing
+in for the hard tier's removed pieces.
 
 - **Gravity curve from bank 6:** each bank multiplies the previous bank's
   gravity by 4/5, rounded to a whole millisecond, down to a floor of
@@ -380,7 +400,7 @@ session type "ambient"), and nothing sounds until the first tap.
 | Rotation | A very faint tick, about 12 dB below the lock click |
 | Moves | Silent (they repeat many times a second) |
 | Line clear (as the flash starts) | A short rising chirp; higher and slightly longer for more lines (1 to 5) |
-| Chips earned (as the rows vanish, after the chirp) | A quick, bright rising square-wave arpeggio, an old computer's "success" beep: up a C major arpeggio from C5, one more note per chip (1 chip: 3 notes; 3 chips: 5 notes, higher and longer) |
+| Chips earned (as the rows vanish, after the chirp) | A quick, bright rising square-wave arpeggio, an old computer's "success" beep: up a C major arpeggio from C5, one more note per chip (1 chip: 3 notes; 3 chips: 5 notes, higher and longer), each note doubled an octave up |
 | FULL WORD | Part of the chips sound, not a second sound: the whole two-octave run to C7 with a long last note |
 | Bank complete | The modem dial-in (below) |
 | READY moment, chips cashed in | A blip per tally step, each a little higher, then a two-note "done" tone; only after the modem has finished |
@@ -391,6 +411,21 @@ Rewards sound like a computer, not money: square-wave beeps and
 arpeggios, no bells or cash register. Volumes and timings are in one
 table, `EFFECTS` in `js/audio/sfx.js` (the modem's phase timings in
 `MODEM`, `js/audio/modem.js`).
+
+- **Rewards are the loudest effects.** Playtesting on iPhone found the
+  chip sound lost under the music: it fired, but was 1 dB quieter than the
+  line chirp before it, in the same square-wave register as the music's
+  leads (C5 to G5), where a phone speaker is weak. Now each reward note is
+  doubled an octave up for presence, with a near-instant attack, and the
+  rewards sit about 8 dB above the chirp and 12 dB above the lock click
+  (loudest 50 ms, rendered: chips -9.4 dBFS, chirp -17.8, lock -21.5).
+- **Music duck.** While a reward plays (chips, including the FULL WORD
+  run, the tally, and the done tone), the music drops by 10 dB over 30 ms,
+  holds until the reward ends, and comes back over 250 ms
+  (`EFFECTS.duck`). Other effects never duck it.
+- **Debug:** `?debug=1` lists every sound effect as it is asked to play,
+  next to the gestures: whether it played, the AudioContext state, and
+  whether the music ducked, or why it did not play.
 
 ### Modem dial-in (bank complete)
 
@@ -403,10 +438,18 @@ The music fades out (0.25 s), then after a 0.3 s lead-in the machine
 | Dialling | 0.570 s | 0.585 s | DTMF digits 3-4-6-8 ("DIM8" on a keypad): 90 ms tones, 75 ms gaps, standard pairs (3 = 697 + 1477, 4 = 770 + 1209, 6 = 770 + 1477, 8 = 852 + 1336 Hz) |
 | Ringback | 1.355 s | 0.5 s | One ring heard by the caller, 440 + 480 Hz |
 | Answer tone | 1.975 s | 0.6 s | The answering modem, 2100 Hz with a slight 15 Hz wobble |
-| Handshake: carrier exchange | 2.575 s | 0.5 s | Both carriers steady (1200 + 2400 Hz), then a brief unscrambled tone pattern flipping between two pairs |
-| Handshake: scrambled data | 3.075 s | 1.2 s | The classic screech: a warbling carrier drifting around 1800 Hz under band-passed noise bursts whose centre keeps shifting |
-| Handshake: training hiss | 4.275 s | 0.7 s | Broader, smoother noise with a faint steady carrier, the modems settling on a speed |
+| Handshake: carrier exchange | 2.575 s | 0.5 s | Both carriers steady (1200 + 2400 Hz), then a burst of FSK flipping between two fixed pairs |
+| Handshake: scrambled data | 3.075 s | 1.2 s | The screech: Stage 5's burst (band-passed noise at 1800, 1200, 2400 Hz over a steady 1800 Hz carrier), then the same bands chopped into stuttering bursts with level jumps and hard switches between bands |
+| Handshake: training hiss | 4.275 s | 0.7 s | Broader, smoother noise over both carriers held faintly, the modems settling on a speed |
 | Handshake: settle | 4.975 s | 0.3 s | A near-silent hush, the "connected" moment; fades out at 5.275 s |
+
+**No pitch movement in the handshake.** No glides, sweeps, vibrato, or
+warble on any handshake tone: real modems hold fixed carrier
+frequencies, and the harshness comes from noise bursts and abrupt on/off
+and level changes. Pass 1 gave the scrambled data a drifting, warbling
+carrier, and on the phone it sounded like a cartoon spaceship; pass 2
+rebuilt the handshake from the Stage 5 one (which sounded right but
+lasted only 0.96 s), and a test checks the rule.
 
 Times are from the first dial tone. The number is not a real phone
 number. READY appears at lead-in + sequence = 5575 ms; the transition

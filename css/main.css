@@ -143,17 +143,54 @@ body {
 
 .app {
   position: relative;
+  /* Above #topfix, so the strip can never cover the header. */
+  z-index: 1;
   height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  /* Keep content clear of the notch, Dynamic Island, and home indicator. */
+  /*
+   * Keep content clear of the notch, Dynamic Island, and home indicator.
+   * The top inset is 0 in a browser tab and, since the iOS status bar
+   * workaround (see #topfix), in the installed app too, where the web view
+   * starts below a solid bar. var(--space-2) is then the minimum gap, so
+   * the header never touches the edge. Older installed apps that still
+   * report a top inset get it added on top.
+   */
   padding:
     calc(env(safe-area-inset-top) + var(--space-2))
     calc(env(safe-area-inset-right) + var(--space-2))
     calc(env(safe-area-inset-bottom) + var(--space-2))
     calc(env(safe-area-inset-left) + var(--space-2));
+}
+
+/*
+ * iOS status bar workaround (WebKit bug 325807; not an Apple-documented
+ * fix). iOS 27 blurs anything under a translucent status bar in installed
+ * web apps, so index.html no longer asks for one: iOS draws a solid bar
+ * and samples its colour from this strip at the top edge. It uses the
+ * surround colour, the colour at the top of the app, so it follows any
+ * theme that changes the surround. Installed app only; never takes
+ * touches, and sits below .app (z-index 1). Remove it only once Apple
+ * fixes the bug (docs/ARCHITECTURE.md, "iOS status bar").
+ */
+#topfix {
+  display: none;
+}
+
+@media (display-mode: standalone) {
+  #topfix {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 12px;
+    background: var(--color-surround);
+    pointer-events: none;
+    z-index: 0;
+  }
 }
 
 .visually-hidden {

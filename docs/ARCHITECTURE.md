@@ -200,7 +200,7 @@ randomness), fully unit tested.
 
 | File | Contents |
 | --- | --- |
-| `banks.js` | `BANK_TABLE` (banks 1-5), `GRAVITY_RAMP`, `PENTOMINO_TIERS`, `getBank(n)`, `gravityForBank(n)` |
+| `banks.js` | `BANK_TABLE` (banks 1-5), `GRAVITY_RAMP`, `PENTOMINO_TIERS`, `EXCLUDED_PIECES` (never dealt; `withoutExcluded` filters every table), `getBank(n)`, `gravityForBank(n)` |
 | `scoring.js` | `LINE_CLEAR_POINTS`, `lineClearPoints(lines, bank)`, `isFullWord`, `dropPoints(locked)` |
 | `chips.js` | `CHIPS_PER_CLEAR` (the chips table), `CHIP_VALUE` (`0x100`), `chipsForClear(lines)`, `cashInPoints(chips, bank)` |
 | `progress.js` | `createProgress()`: score, bank, total lines, lines in the bank, chips held; `handle(engineEvent)` returns progression events |
@@ -352,7 +352,7 @@ settings, and the session applies them (`game.setWeights`,
 | `context.js` | Web Audio | AudioContext creation and unlock, audio session type, mixer (`MIX`), visibility suspend/resume |
 | `synth.js` | Web Audio | `playSchedule(ctx, destination, segments, when)`: oscillators, filtered noise, envelopes; returns a voice that can be stopped |
 | `player.js` | Web Audio | The music player: fetch, decode, loop, pause/resume, fades, memory |
-| `index.js` | Glue | `createAudio({ settings })`: `onEvent` (the session hook), `unlock`, `setHidden`, `transitionTiming` |
+| `index.js` | Glue | `createAudio({ settings, onSound })`: `onEvent` (the session hook), `unlock`, `setHidden`, `transitionTiming`; the music duck under rewards; `onSound` reports every effect asked to play (the `?debug=1` log) |
 
 - **Gesture unlock.** iOS keeps Web Audio silent until a context is
   resumed inside a user gesture. Nothing audio-related runs at load:
@@ -383,6 +383,11 @@ settings, and the session applies them (`game.setWeights`,
   step with `tallyValue`, then the done tone) when READY arrives on time,
   which is after the modem by construction; on a skip it hangs up the
   modem and plays only the done tone.
+- **Music duck.** Each reward listed in `EFFECTS.duck.effects` automates
+  the music bus gain: down by `db` over `attack`, held to the reward's end
+  (or a later duck's), back to `MIX.music` over `release`. It works on the
+  bus, so it applies to whichever track is playing and never fights the
+  player's per-track fades.
 - **Music follows the screen**, via `musicTarget`: it plays only while
   `playing`. Pause stops the source and remembers the position; resume
   restarts the same buffer from there. `bankComplete` fades it out over
@@ -496,6 +501,36 @@ the playfield's touch surface, so a gesture that starts in the playfield
 screen's rows and BACK, and the SETTINGS buttons on the start screen and
 pause menu, are native `<button>`s in the overlay, at least
 44 x 44 px.
+
+## iOS status bar
+
+A **workaround** for WebKit bug 325807, not an Apple-documented fix.
+iOS 27 puts a system blur over anything drawn under a translucent status
+bar in installed home screen web apps, and page CSS cannot remove it.
+
+- `index.html` no longer has `apple-mobile-web-app-status-bar-style`
+  (it was `black-translucent`). iOS then draws a solid status bar and
+  starts the web view below it.
+- `#topfix`, the first child of `body` and outside `#app`, is a 12 px
+  solid strip at the top edge for iOS to sample the bar's colour from. It
+  shows only in `display-mode: standalone`, uses `var(--color-surround)`
+  (the colour at the top of the app, so it follows the surround if themes
+  change it), has `pointer-events: none`, and sits below `.app`
+  (`z-index` 0 against 1). The touch guards never see it.
+- `env(safe-area-inset-top)` now reads 0 in the installed app, as in a
+  browser tab. `.app`'s top padding is the inset plus `--space-2`, so
+  the header keeps an 8 px gap with no inset and still clears the notch
+  on any older installed app that reports one. `viewport-fit=cover` and
+  the bottom inset (home indicator) are unchanged.
+- The layout sizes from `height: 100%` on `html` and `body` (with `body`
+  fixed to `inset: 0`), never `100vh`, `screen.height`, or
+  `window.innerHeight`, so it fits the shorter web view.
+- `theme-color` and the manifest colours stay: iOS 27 ignores them, but
+  Android and desktop use them.
+- `tests/status-bar.test.js` keeps the workaround in place.
+
+Remove the workaround only once Apple fixes the bug: put the meta back,
+then delete `#topfix`, its CSS, and the test.
 
 ## Data flow
 

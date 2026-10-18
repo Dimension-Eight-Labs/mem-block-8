@@ -55,36 +55,55 @@ export const MODEM = Object.freeze({
   // The answering modem's 2100 Hz answer tone, with the slow 15 Hz
   // amplitude wobble that newer modems add to it.
   answer: { duration: 0.6, freq: 2100, am: { rate: 15, depth: 0.2 }, gain: 0.28 },
-  // Handshake: the two modems negotiating a connection. It develops over
-  // about 2.7 s, as a real one does, rather than repeating one noise loop.
+  // Handshake: the two modems negotiating a connection, about 2.7 s.
+  //
+  // RULE: NO PITCH MOVEMENT IN THE HANDSHAKE. No glides, sweeps, vibrato,
+  // or tremolo (sweepTo, am) on any handshake segment. Real modems hold
+  // fixed carrier frequencies; the harshness of the sound comes from noise
+  // bursts and abrupt on/off and level changes, never from moving pitch.
+  // Pass 1 broke this rule (a drifting, warbling carrier) and its screech
+  // sounded like a cartoon spaceship on the phone. The parts below extend
+  // the Stage 5 handshake, which sounded right but was only 0.96 s long:
+  // its carriers, its FSK flips, and its burst pattern, repeated and
+  // varied. A test checks the rule.
+  //
   // Four parts, in order (MODEM_HANDSHAKE_PARTS):
   handshake: {
-    // 1. Carrier exchange: each side puts up its steady carrier (the caller
-    // around 1200 Hz, the answerer 2400 Hz), then a short burst of
-    // unscrambled tones flipping between two pairs, the modems trading
-    // capabilities before they switch to scrambled data.
+    // 1. Carrier exchange (Stage 5's opening, slightly longer): both
+    // carriers steady (the caller around 1200 Hz, the answerer 2400 Hz),
+    // then a burst of FSK, the tones flipping between two fixed pairs.
     carrierExchange: {
-      carriers: { duration: 0.26, freqs: [1200, 2400], gain: 0.25 },
-      pattern: { pairs: [[980, 1650], [1180, 1850]], steps: 8, step: 0.03, gain: 0.2 },
+      carriers: { duration: 0.29, freqs: [1200, 2400], gain: 0.25 },
+      pattern: { pairs: [[980, 1650], [1180, 1850]], steps: 6, step: 0.035, gain: 0.2 },
     },
-    // 2. Scrambled data: the classic screech. A carrier that warbles and
-    // drifts (each segment glides to a new pitch) under bursts of
-    // band-passed noise whose centre keeps shifting, as the line probing
-    // and equaliser training sweep across the band.
+    // 2. Scrambled data: the screech. Stage 5's burst (band-passed noise at
+    // 1800, then 1200, then 2400 Hz over a steady 1800 Hz carrier) comes
+    // first, then the same bands again, chopped up: short stuttering
+    // bursts, level jumps, and hard switches between bands. Each burst is
+    // [start, duration, band centre Hz, Q, gain], seconds from the part's
+    // start. The carrier stays at one pitch and only steps in level.
     scrambled: {
-      warble: {
-        glides: [[1800, 1650], [1650, 2050], [2050, 1700], [1700, 1900]],
-        am: { rate: 32, depth: 0.45 },
-        gain: 0.12,
-      },
-      bursts: { freqs: [1800, 1200, 2400, 1600, 2100, 1350, 2600, 1900], q: [1.2, 2, 1, 1.6], gap: 0.01, gain: 0.45 },
       duration: 1.2,
+      carrier: { freq: 1800, levels: [[0, 0.5, 0.12], [0.5, 0.3, 0.07], [0.8, 0.4, 0.12]] },
+      bursts: [
+        [0, 0.2, 1800, 1.2, 0.5], // Stage 5's burst, verbatim...
+        [0.22, 0.14, 1200, 2, 0.45],
+        [0.375, 0.125, 2400, 1, 0.45], // ...to here
+        [0.51, 0.06, 1800, 1.2, 0.5], // stutter
+        [0.585, 0.05, 1800, 1.2, 0.3],
+        [0.645, 0.11, 2400, 1, 0.5],
+        [0.765, 0.04, 1200, 2, 0.4],
+        [0.81, 0.14, 1800, 1.2, 0.5],
+        [0.955, 0.03, 2400, 1, 0.35],
+        [0.99, 0.09, 1200, 2, 0.45],
+        [1.085, 0.115, 1800, 1.2, 0.5],
+      ],
     },
-    // 3. Training hiss: the data pump settling on its final speed. Broader,
-    // smoother noise (wide band, slow edges) with a faint steady carrier.
+    // 3. Training hiss: broader, smoother noise (wide band, slow edges)
+    // over both carriers held faintly, the modems settling on a speed.
     training: {
       noise: { freq: 1700, q: 0.45, gain: 0.32, attack: 0.06, release: 0.12 },
-      carrier: { freq: 1800, gain: 0.05 },
+      carriers: { freqs: [1200, 2400], gain: 0.06 },
       duration: 0.7,
     },
     // 4. Settle: everything drops to a near-silent hush, the "connected"
@@ -144,27 +163,24 @@ export function buildModemSchedule(m = MODEM) {
   }
 
   const sc = h.scrambled;
-  const glideTime = sc.duration / sc.warble.glides.length;
-  sc.warble.glides.forEach(([from, to], i) => {
-    // Consecutive glides meet at the same pitch, so the carrier drifts
-    // continuously; short edges keep the joins from clicking.
-    out.push(tone(t + i * glideTime, glideTime, [from], {
-      ...part('scrambled'), sweepTo: [to], gain: sc.warble.gain, am: sc.warble.am, attack: 0.01, release: 0.01,
+  for (const [start, duration, gain] of sc.carrier.levels) {
+    // Level steps, not fades: abrupt changes are part of the sound.
+    out.push(tone(t + start, duration, [sc.carrier.freq], {
+      ...part('scrambled'), gain, attack: 0.003, release: 0.003,
     }));
-  });
-  const burstTime = sc.duration / sc.bursts.freqs.length;
-  sc.bursts.freqs.forEach((freq, i) => {
-    out.push(noise(t + i * burstTime, burstTime - sc.bursts.gap, {
-      type: 'bandpass', freq, q: sc.bursts.q[i % sc.bursts.q.length],
-    }, { ...part('scrambled'), gain: sc.bursts.gain, attack: 0.008, release: 0.01 }));
-  });
+  }
+  for (const [start, duration, freq, q, gain] of sc.bursts) {
+    out.push(noise(t + start, duration, { type: 'bandpass', freq, q }, {
+      ...part('scrambled'), gain, attack: 0.004, release: 0.006,
+    }));
+  }
   t += sc.duration;
 
   const tr = h.training;
   out.push(noise(t, tr.duration, { type: 'bandpass', freq: tr.noise.freq, q: tr.noise.q }, {
     ...part('training'), gain: tr.noise.gain, attack: tr.noise.attack, release: tr.noise.release,
   }));
-  out.push(tone(t, tr.duration, [tr.carrier.freq], { ...part('training'), gain: tr.carrier.gain, attack: 0.03, release: tr.noise.release }));
+  out.push(tone(t, tr.duration, tr.carriers.freqs, { ...part('training'), gain: tr.carriers.gain, attack: 0.03, release: tr.noise.release }));
   t += tr.duration;
 
   const st = h.settle;
@@ -206,6 +222,8 @@ export const MODEM_LEAD_IN = 0.3;
  */
 export function transitionTiming(modemOn, { silentMs, readyMs }) {
   if (!modemOn) return { readyAtMs: silentMs - readyMs, durationMs: silentMs };
-  const readyAtMs = Math.ceil((MODEM_LEAD_IN + MODEM_DURATION) * 1000);
+  // Rounded to a microsecond first: summing the table's seconds leaves
+  // float dust (5.275000000000001) that would otherwise round up a whole ms.
+  const readyAtMs = Math.ceil(Math.round((MODEM_LEAD_IN + MODEM_DURATION) * 1e6) / 1e3);
   return { readyAtMs, durationMs: readyAtMs + readyMs };
 }

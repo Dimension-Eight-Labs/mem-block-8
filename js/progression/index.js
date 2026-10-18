@@ -9,7 +9,9 @@
  * Import from here rather than from individual files.
  */
 
-export { BANK_TABLE, GRAVITY_RAMP, PENTOMINO_TIERS, getBank, gravityForBank } from './banks.js';
+export {
+  BANK_TABLE, GRAVITY_RAMP, PENTOMINO_TIERS, EXCLUDED_PIECES, withoutExcluded, getBank, gravityForBank,
+} from './banks.js';
 export {
   LINE_CLEAR_POINTS,
   FULL_WORD_LINES,

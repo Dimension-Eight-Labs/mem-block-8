@@ -96,7 +96,12 @@ async function boot() {
   });
   screens.show('start'); // replaces the static markup, in the saved number mode
 
-  const audio = createAudio({ settings: { music: settings.choice('music'), sfx: settings.choice('sfx') } });
+  // ?debug=1 logs every sound effect; the panel is created further down.
+  let logSound = null;
+  const audio = createAudio({
+    settings: { music: settings.choice('music'), sfx: settings.choice('sfx') },
+    onSound: (record) => logSound?.(record),
+  });
   // iOS only lets audio start inside a user gesture, so every tap, click,
   // and key press offers to unlock it (cheap once unlocked). Capture phase,
   // so it runs before the handler that acts on the gesture (starting the
@@ -163,6 +168,7 @@ async function boot() {
     const { createDebugPanel } = await import('./ui/debug.js');
     const panel = createDebugPanel(document.body, DEBUG_LOG_LENGTH);
     onDebug = panel.log;
+    logSound = panel.logSound;
     renderer.setDebugZones({ sideFraction: touch.sideFraction, bottomFraction: touch.bottomFraction });
   }
 

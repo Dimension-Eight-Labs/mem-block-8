@@ -51,7 +51,7 @@
  *   - Or bump CACHE_VERSION locally.
  */
 
-const CACHE_VERSION = 'v0.5.1';
+const CACHE_VERSION = 'v0.5.3';
 const CACHE_NAME = `mem-block-8-${CACHE_VERSION}`;
 
 /**

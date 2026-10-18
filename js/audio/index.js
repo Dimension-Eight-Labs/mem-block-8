@@ -24,9 +24,9 @@
  * effects are synthesized).
  */
 
-import { createAudioOutput } from './context.js';
+import { createAudioOutput, MIX } from './context.js';
 import { playSchedule } from './synth.js';
-import { buildEffect, effectForEvent } from './sfx.js';
+import { buildEffect, effectForEvent, EFFECTS } from './sfx.js';
 import { MODEM_LEAD_IN, transitionTiming } from './modem.js';
 import { TRACKS, musicTarget } from './music.js';
 import { createMusicPlayer, MUSIC_FADES } from './player.js';
@@ -52,14 +52,29 @@ export { EFFECTS, EVENT_EFFECTS, buildEffect, effectForEvent } from './sfx.js';
  */
 
 /**
+ * @typedef {object} SoundRecord One effect asked to play (for ?debug=1).
+ * @property {string} name
+ * @property {number} t performance.now() when asked.
+ * @property {boolean} played False when it could not play (reason says why).
+ * @property {string} state The AudioContext state ('none' before unlock):
+ *   a sound "played" into a suspended context is silent until it resumes.
+ * @property {string} [reason] 'sfx off', 'no audio', or 'hidden'.
+ * @property {boolean} [ducked] The music ducked for it.
+ */
+
+/**
  * @param {object} setup
  * @param {{music: OnOffSetting, sfx: OnOffSetting}} setup.settings
  * @param {readonly import('./music.js').Track[]} [setup.tracks]
  * @param {(url: string) => Promise<ArrayBuffer>} [setup.fetchBytes]
  * @param {Window & typeof globalThis} [setup.win]
+ * @param {(record: SoundRecord) => void} [setup.onSound] Told about every
+ *   effect asked to play, played or not (the ?debug=1 log).
  * @returns {Audio}
  */
-export function createAudio({ settings, tracks = TRACKS, fetchBytes = defaultFetch, win = globalThis }) {
+export function createAudio({
+  settings, tracks = TRACKS, fetchBytes = defaultFetch, win = globalThis, onSound = () => {},
+}) {
   const output = createAudioOutput(win);
   const player = createMusicPlayer({ output, tracks, fetchBytes });
   const musicOn = () => settings.music.get() === 'on';
@@ -71,6 +86,8 @@ export function createAudio({ settings, tracks = TRACKS, fetchBytes = defaultFet
   let modem = null;
   /** @type {import('./synth.js').Voice | null} */
   let busy = null;
+  /** Audio-clock time the current music duck lasts until. */
+  let duckUntil = 0;
 
   function sounding(voice) {
     const ctx = output.get();
@@ -84,9 +101,43 @@ export function createAudio({ settings, tracks = TRACKS, fetchBytes = defaultFet
    * @returns {import('./synth.js').Voice | null}
    */
   function play(name, event, delay = 0) {
-    if (!sfxOn() || !output.isReady()) return null;
     const ctx = output.get();
-    return playSchedule(ctx, output.sfxBus(), buildEffect(name, event), ctx.currentTime + delay);
+    const record = { name, t: win.performance ? win.performance.now() : 0, state: ctx ? ctx.state : 'none' };
+    if (!sfxOn() || !output.isReady()) {
+      let reason = 'hidden';
+      if (!sfxOn()) reason = 'sfx off';
+      else if (!ctx) reason = 'no audio';
+      onSound({ ...record, played: false, reason });
+      return null;
+    }
+    const voice = playSchedule(ctx, output.sfxBus(), buildEffect(name, event), ctx.currentTime + delay);
+    const ducked = EFFECTS.duck.effects.includes(name);
+    if (ducked) duck(voice.endsAt);
+    onSound({ ...record, played: true, ducked });
+    return voice;
+  }
+
+  /**
+   * Duck the music under a reward sound: down by EFFECTS.duck.db over its
+   * attack, held until `until` (or a later duck already running), back
+   * over its release. Automation on the music bus, so it applies to
+   * whatever track plays, and overlapping rewards extend one duck.
+   * @param {number} until Audio-clock time the reward ends.
+   */
+  function duck(until) {
+    const bus = output.musicBus();
+    if (!bus) return;
+    const d = EFFECTS.duck;
+    const now = output.get().currentTime;
+    const low = MIX.music * 10 ** (d.db / 20);
+    const end = Math.max(until, duckUntil);
+    const g = bus.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now); // from wherever it is (possibly mid-release)
+    g.linearRampToValueAtTime(low, now + d.attack);
+    g.setValueAtTime(low, Math.max(end, now + d.attack));
+    g.linearRampToValueAtTime(MIX.music, Math.max(end, now + d.attack) + d.release);
+    duckUntil = end;
   }
 
   function updateMusic() {
