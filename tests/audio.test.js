@@ -1,16 +1,19 @@
 /**
  * tests/audio.test.js - The pure side of sound (Stage 5): DTMF table, the
  * modem schedule, the effect table, the playlist, loop points, the memory
- * rule, and the bank transition timing; the longer handshake, the reward
- * sounds, and the chip tally (playtest pass 1). No Web Audio needed.
+ * rule, and the bank transition timing; the reward sounds and the chip
+ * tally (playtest pass 1); the handshake rebuilt from the V.34-era
+ * prototype, measured on its rendered samples (playtest pass 3). No Web
+ * Audio needed.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DTMF_ROW_HZ, DTMF_COL_HZ, dtmfFreqs, MODEM, MODEM_PHASES, MODEM_HANDSHAKE_PARTS, MODEM_SCHEDULE,
-  MODEM_DURATION, MODEM_LEAD_IN, buildModemSchedule, transitionTiming,
+  DTMF_ROW_HZ, DTMF_COL_HZ, dtmfFreqs, MODEM_PHASES, MODEM_HANDSHAKE_PHASES, MODEM_SCHEDULE, MODEM_TIMELINE,
+  MODEM_DURATION, MODEM_LEAD_IN, PROBE_GAIN_DB, HISS_DB, buildModemSchedule, transitionTiming,
 } from '../js/audio/modem.js';
+import { renderSignal, fskBits, fskBitCount, probeFreqs } from '../js/audio/signals.js';
 import { EFFECTS, EVENT_EFFECTS, buildEffect, effectForEvent } from '../js/audio/sfx.js';
 import { overlaps, scheduleEnd, segmentProblems, tone } from '../js/audio/schedule.js';
 import {
@@ -39,71 +42,202 @@ test('DTMF: the standard row and column frequencies', () => {
 
 // --- the modem schedule ------------------------------------------------------------
 
-test('modem: phases play in order: dial tone, dialling, ringback, answer, handshake', () => {
+const RATE = 48000;
+const handshake = MODEM_SCHEDULE.filter((s) => MODEM_HANDSHAKE_PHASES.includes(s.phase));
+const segsOf = (phase) => MODEM_SCHEDULE.filter((s) => s.phase === phase);
+const spanOf = (phase) => MODEM_TIMELINE.find((s) => s.phase === phase);
+const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol;
+
+/** Power of one frequency in a stretch of samples (Goertzel). */
+function power(data, from, to, hz) {
+  const w = (2 * Math.PI * hz) / RATE;
+  const c = 2 * Math.cos(w);
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = from; i < to; i++) {
+    const s0 = data[i] + c * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return (s1 * s1 + s2 * s2 - c * s1 * s2) / ((to - from) ** 2);
+}
+
+/** Largest change between neighbouring samples. */
+function maxStep(data) {
+  let max = 0;
+  for (let i = 1; i < data.length; i++) max = Math.max(max, Math.abs(data[i] - data[i - 1]));
+  return max;
+}
+
+test('modem: phases in order, gaps included: dial tone ... training hiss', () => {
+  assert.deepEqual(MODEM_PHASES, ['dialTone', 'dialing', 'ringback', 'answer', 'fskExchange', 'gap', 'info1', 'probe1',
+    'info2', 'probe2', 'toneNoise', 'gap2', 'trainingHiss']);
+  assert.deepEqual(MODEM_TIMELINE.map((s) => s.phase), MODEM_PHASES);
+  // Segments appear in phase order, each inside its phase's span; gaps are silent.
   const order = [];
   for (const s of MODEM_SCHEDULE) if (order.at(-1) !== s.phase) order.push(s.phase);
-  assert.deepEqual(order, MODEM_PHASES);
-  assert.deepEqual(MODEM_PHASES, ['dialTone', 'dialing', 'ringback', 'answer', 'handshake']);
-  // Each phase starts after the previous one has finished.
-  const spans = MODEM_PHASES.map((phase) => {
-    const segs = MODEM_SCHEDULE.filter((s) => s.phase === phase);
-    return { start: Math.min(...segs.map((s) => s.start)), end: scheduleEnd(segs) };
-  });
-  for (let i = 1; i < spans.length; i++) assert.ok(spans[i].start >= spans[i - 1].end - 1e-9, MODEM_PHASES[i]);
+  assert.deepEqual(order, MODEM_PHASES.filter((p) => !p.startsWith('gap')));
+  for (const s of MODEM_SCHEDULE) {
+    const span = spanOf(s.phase);
+    assert.ok(s.start >= span.start - 1e-9 && s.start + s.duration <= span.start + span.duration + 1e-9, s.phase);
+  }
+  // From the answer tone on, each phase starts exactly where the last ended.
+  const from = MODEM_PHASES.indexOf('answer');
+  for (let i = from + 1; i < MODEM_TIMELINE.length; i++) {
+    const prev = MODEM_TIMELINE[i - 1];
+    assert.ok(near(MODEM_TIMELINE[i].start, prev.start + prev.duration, 1e-6), MODEM_TIMELINE[i].phase);
+  }
+});
+
+test('modem: the handshake follows the prototype: phase lengths, 3.49 s in all, after the unchanged dial-in', () => {
+  const want = {
+    answer: 0.95, fskExchange: 0.65, gap: 0.04, info1: 0.12, probe1: 0.3, info2: 0.09, probe2: 0.3,
+    toneNoise: 0.22, gap2: 0.07, trainingHiss: 0.75,
+  };
+  assert.deepEqual(MODEM_HANDSHAKE_PHASES, Object.keys(want));
+  for (const [phase, seconds] of Object.entries(want)) assert.ok(near(spanOf(phase).duration, seconds), phase);
+  // The dial tone, DTMF, and ringback keep their timing; the answer tone starts at 1.975 s.
+  assert.deepEqual(MODEM_TIMELINE.slice(0, 3).map((s) => [s.phase, s.start, s.duration]),
+    [['dialTone', 0, 0.45], ['dialing', 0.57, 0.585], ['ringback', 1.355, 0.5]]);
+  assert.equal(spanOf('answer').start, 1.975);
+  assert.ok(near(MODEM_DURATION - spanOf('answer').start, 3.49, 1e-6));
+  assert.ok(near(MODEM_DURATION, 5.465, 1e-6), String(MODEM_DURATION));
+  assert.equal(MODEM_DURATION, scheduleEnd(buildModemSchedule()));
 });
 
 test('modem: the tones of each phase', () => {
-  const freqsOf = (phase) => MODEM_SCHEDULE.filter((s) => s.phase === phase && s.kind === 'tone').map((s) => s.freqs);
+  const freqsOf = (phase) => segsOf(phase).filter((s) => s.kind === 'tone').map((s) => s.freqs);
   assert.deepEqual(freqsOf('dialTone'), [[350, 440]]);
   assert.deepEqual(freqsOf('ringback'), [[440, 480]]);
-  assert.deepEqual(freqsOf('answer'), [[2100]]);
-  const handshake = MODEM_SCHEDULE.filter((s) => s.phase === 'handshake');
-  assert.ok(handshake.some((s) => s.kind === 'tone' && s.freqs.includes(1200) && s.freqs.includes(2400)), 'both carriers');
-  assert.ok(handshake.filter((s) => s.kind === 'noise').length >= 2, 'noise bursts');
-  assert.ok(handshake.every((s) => s.kind !== 'noise' || s.part === 'settle' || s.filter.type === 'bandpass'), 'filtered noise');
+  for (const info of ['info1', 'info2']) {
+    assert.deepEqual(freqsOf(info), [[1200, 2400, 3600]]);
+    assert.deepEqual(segsOf(info)[0].levels, [0.5, 0.25, 0.45]);
+  }
+  assert.deepEqual(freqsOf('toneNoise'), [[2400]]);
+  assert.deepEqual(segsOf('toneNoise').filter((s) => s.kind === 'signal').map((s) => s.signal.type), ['shapedNoise']);
+  assert.deepEqual(segsOf('trainingHiss').map((s) => s.signal.type), ['shapedNoise']);
+  assert.deepEqual(segsOf('trainingHiss')[0].signal.spectrumDb, HISS_DB);
 });
 
-/** Start, end, and segments of each handshake part. */
-function handshakeParts() {
-  return MODEM_HANDSHAKE_PARTS.map((part) => {
-    const segs = MODEM_SCHEDULE.filter((s) => s.part === part);
-    return { part, segs, start: Math.min(...segs.map((s) => s.start)), end: scheduleEnd(segs) };
+test('answer tone: 2100 Hz, weak 2nd harmonic, phase reversals at 0.45 and 0.90 s, 15 Hz wobble', () => {
+  const [answer, caller] = segsOf('answer');
+  assert.deepEqual({ ...answer.signal, am: { ...answer.signal.am } }, {
+    type: 'answer', duration: 0.95, freq: 2100, h2: 0.12, am: { rate: 15, depth: 0.2 }, reversals: [0.45, 0.9],
   });
-}
+  const data = renderSignal(answer.signal, RATE);
+  // The sign of the fundamental, one 2100 Hz period at a time: it flips
+  // exactly at each reversal and nowhere else.
+  const period = RATE / 2100;
+  const flips = [];
+  let last = 0;
+  for (let p = 0; (p + 1) * period <= data.length; p++) {
+    const from = Math.round(p * period);
+    const to = Math.round((p + 1) * period);
+    let dot = 0;
+    for (let i = from; i < to; i++) dot += data[i] * Math.sin((2 * Math.PI * 2100 * i) / RATE);
+    const sign = Math.sign(dot);
+    if (last && sign !== last) flips.push(from / RATE);
+    last = sign;
+  }
+  assert.equal(flips.length, 2, flips.join(' '));
+  flips.forEach((t, i) => assert.ok(Math.abs(t - [0.45, 0.9][i]) < 1 / 2100 + 1e-6, `reversal at ${t}`));
+  // The envelope (RMS per 2 ms) wobbles at 15 Hz, about 20% deep.
+  const block = RATE / 500;
+  const env = [];
+  for (let i = 0; i + block <= data.length; i += block) {
+    let sum = 0;
+    for (let j = i; j < i + block; j++) sum += data[j] * data[j];
+    env.push(Math.sqrt(sum / block));
+  }
+  const mean = env.reduce((a, b) => a + b, 0) / env.length;
+  const strength = (hz) => {
+    let re = 0;
+    let im = 0;
+    env.forEach((v, n) => {
+      re += (v - mean) * Math.cos((2 * Math.PI * hz * n) / 500);
+      im += (v - mean) * Math.sin((2 * Math.PI * hz * n) / 500);
+    });
+    return Math.hypot(re, im);
+  };
+  const rates = Array.from({ length: 36 }, (_, i) => i + 5);
+  assert.equal(rates.reduce((best, hz) => (strength(hz) > strength(best) ? hz : best)), 15);
+  const depth = (Math.max(...env) - Math.min(...env)) / (Math.max(...env) + Math.min(...env));
+  assert.ok(depth > 0.15 && depth < 0.25, `depth ${depth}`);
+  // No clicks: the reversals fall on zero crossings, so no step is larger
+  // than the wave's own steepest slope.
+  assert.ok(maxStep(data) <= (2 * Math.PI * 2100 / RATE) * (1 + 2 * 0.12) * 1.2 + 1e-6);
+  // The caller's faint FSK joins for the last 0.35 s.
+  assert.equal(caller.signal.type, 'fsk');
+  assert.deepEqual(caller.signal.freqs, [980, 1180]);
+  assert.ok(near(caller.start, answer.start + 0.6) && near(caller.duration, 0.35));
+  assert.ok(caller.gain < answer.gain / 4);
+});
 
-test('handshake: about 2.7 s in four parts, in order, that develop rather than repeat', () => {
-  assert.deepEqual(MODEM_HANDSHAKE_PARTS, ['carrierExchange', 'scrambled', 'training', 'settle']);
-  const handshake = MODEM_SCHEDULE.filter((s) => s.phase === 'handshake');
-  assert.ok(handshake.every((s) => MODEM_HANDSHAKE_PARTS.includes(s.part)), 'every handshake segment belongs to a part');
-  const parts = handshakeParts();
-  const length = parts.at(-1).end - parts[0].start;
-  assert.ok(length >= 2.5 && length <= 3, `handshake ${length}`);
-  for (let i = 1; i < parts.length; i++) {
-    assert.ok(Math.abs(parts[i].start - parts[i - 1].end) < 1e-9, `${parts[i].part} follows ${parts[i - 1].part}`);
+test('FSK exchange: 1650/1850 Hz with a strong 2nd harmonic over 980/1180 Hz, 300 baud, seeded bits, no clicks', () => {
+  const streams = segsOf('fskExchange');
+  assert.deepEqual(streams.map((s) => [s.signal.type, s.signal.freqs, s.signal.baud]),
+    [['fsk', [1650, 1850], 300], ['fsk', [980, 1180], 300]]);
+  assert.equal(streams[0].signal.h2, 0.3);
+  assert.ok(streams[1].gain < streams[0].gain / 2, 'the caller is underneath');
+  for (const s of [...streams, segsOf('answer')[1]]) {
+    const { signal: sig } = s;
+    const data = renderSignal(sig, RATE);
+    const bits = fskBits(sig.seed, fskBitCount(sig.duration, sig.baud));
+    assert.equal(bits.length, Math.ceil(sig.duration * 300));
+    assert.ok(bits.includes(0) && bits.includes(1));
+    // Each bit's 1/300 s carries the frequency its bit says.
+    for (let b = 0; b < bits.length; b++) {
+      const from = Math.round((b * RATE) / 300);
+      const to = Math.min(data.length, Math.round(((b + 1) * RATE) / 300));
+      if (to - from < 100) continue; // a partial last bit
+      const [p0, p1] = sig.freqs.map((hz) => power(data, from, to, hz));
+      assert.equal(p1 > p0 ? 1 : 0, bits[b], `bit ${b}`);
+    }
+    // Phase-continuous switching: no step beyond the steepest slope.
+    assert.ok(maxStep(data) <= (2 * Math.PI * sig.freqs[1] / RATE) * (1 + 2 * sig.h2) + 1e-6);
   }
-  const lengths = Object.fromEntries(parts.map((p) => [p.part, p.end - p.start]));
-  // Roughly the specified lengths: 0.5, 1.2, 0.7, 0.3 s.
-  for (const [part, want] of Object.entries({ carrierExchange: 0.5, scrambled: 1.2, training: 0.7, settle: 0.3 })) {
-    assert.ok(Math.abs(lengths[part] - want) <= 0.1, `${part} ${lengths[part]}`);
-  }
-  const [exchange, scrambled, training, settle] = parts;
-  // Carrier exchange: steady 1200 + 2400 Hz, then the FSK pattern.
-  assert.deepEqual(exchange.segs[0].freqs, [1200, 2400]);
-  assert.ok(exchange.segs.slice(1).length >= 4 && exchange.segs.slice(1).every((s) => s.kind === 'tone'));
-  // Scrambled: Stage 5's burst first (1800, 1200, 2400 Hz bands), then
-  // stuttering bursts that switch between those bands.
-  const bursts = scrambled.segs.filter((s) => s.kind === 'noise');
-  assert.deepEqual(bursts.slice(0, 3).map((s) => s.filter.freq), [1800, 1200, 2400]);
-  assert.ok(bursts.length >= 8, 'chopped up, not one long burst');
-  assert.ok(bursts.every((s) => [1200, 1800, 2400].includes(s.filter.freq)), 'noise around the carriers');
-  for (let i = 1; i < bursts.length; i++) assert.ok(bursts[i].start >= bursts[i - 1].start + bursts[i - 1].duration - 1e-9, 'separate bursts');
-  // Training: broader (lower Q) and smoother (slower edges) than the screech.
-  const hiss = training.segs.find((s) => s.kind === 'noise');
-  assert.ok(hiss.filter.q < Math.min(...bursts.map((s) => s.filter.q)));
-  assert.ok(hiss.attack > Math.max(...bursts.map((s) => s.attack)));
-  // Settle: a near-silent hush.
-  const peak = (segs) => Math.max(...segs.map((s) => s.gain));
-  assert.ok(peak(settle.segs) < peak(scrambled.segs) / 5);
+});
+
+test('FSK bits come from a seed: the same every time, different for another seed', () => {
+  assert.deepEqual(fskBits(42, 200), fskBits(42, 200));
+  assert.notDeepEqual(fskBits(42, 200), fskBits(43, 200));
+  // Rendered afresh (a new cache key), the samples are identical.
+  const sig = segsOf('fskExchange')[0].signal;
+  assert.deepEqual(renderSignal({ ...sig, fresh: 1 }, RATE), renderSignal(sig, RATE));
+  const hiss = segsOf('trainingHiss')[0].signal;
+  assert.deepEqual(renderSignal({ ...hiss, fresh: 1 }, RATE), renderSignal(hiss, RATE));
+});
+
+test('line probe: multiples of 150 Hz to 3750 without 900/1200/1800/2400, loudest near 3300 Hz, 6 dB down halfway', () => {
+  const expected = [];
+  for (let f = 150; f <= 3750; f += 150) if (![900, 1200, 1800, 2400].includes(f)) expected.push(f);
+  assert.deepEqual(probeFreqs(150, 3750, [900, 1200, 1800, 2400]), expected);
+  const [one] = segsOf('probe1');
+  const [two] = segsOf('probe2');
+  assert.deepEqual(one.signal, two.signal, 'one chord, played twice');
+  assert.deepEqual(one.signal.freqs, expected);
+  assert.deepEqual(one.signal.gainsDb, PROBE_GAIN_DB);
+  const data = renderSignal(one.signal, RATE);
+  const half = Math.round(0.15 * RATE);
+  for (const hz of [900, 1200, 1800, 2400]) assert.ok(power(data, 0, half, hz) < power(data, 0, half, 3300) / 1e4, `${hz} skipped`);
+  assert.ok(power(data, 0, half, 3300) > power(data, 0, half, 1500) * 10, 'loudest at 3300');
+  const rms = (from, to) => Math.sqrt(data.slice(from, to).reduce((a, v) => a + v * v, 0) / (to - from));
+  const dropDb = 20 * Math.log10(rms(half, data.length) / rms(0, half));
+  assert.ok(Math.abs(dropDb + 6) < 0.2, `drop ${dropDb} dB`);
+});
+
+test('training hiss: the measured spectrum (peaks near 1450, 2050, 3450 Hz), fading over its last 0.12 s', () => {
+  const [hiss] = segsOf('trainingHiss');
+  assert.ok(near(hiss.release, 0.12));
+  const data = renderSignal(hiss.signal, RATE);
+  const band = (hz) => [-20, -10, 0, 10, 20].reduce((sum, d) => sum + power(data, 0, data.length, hz + d), 0);
+  assert.ok(band(3450) > band(3000) * 3 && band(3450) > band(900) * 10, 'peak near 3450 Hz');
+  assert.ok(band(1450) > band(1150) * 2, 'peak near 1450 Hz');
+});
+
+test('handshake: band-limited to a phone line (250-3900 Hz); the dial-in is not', () => {
+  for (const s of handshake) assert.deepEqual(s.band, [250, 3900], s.phase);
+  for (const s of MODEM_SCHEDULE.filter((x) => !handshake.includes(x))) assert.equal(s.band, undefined, s.phase);
 });
 
 test('modem: dials 3-4-6-8 ("DIM8") with DTMF pairs, realistic tone and gap lengths', () => {
@@ -131,26 +265,17 @@ test('modem: no two tones overlap within a phase', () => {
   }
 });
 
-test('handshake: no pitch movement (no glides, sweeps, vibrato, or warble), fixed carriers', () => {
-  const handshake = MODEM_SCHEDULE.filter((s) => s.phase === 'handshake');
-  for (const s of handshake) {
-    assert.equal(s.sweepTo, undefined, `glide in ${s.part}`);
-    assert.equal(s.am, undefined, `warble in ${s.part}`);
-  }
-  const carriers = new Set(handshake.filter((s) => s.kind === 'tone').flatMap((s) => s.freqs));
-  for (const hz of [1200, 2400, 1800]) assert.ok(carriers.has(hz), `${hz} Hz carrier`);
+test('handshake: frequencies switch (FSK) but never sweep: no glides or vibrato anywhere', () => {
+  for (const s of MODEM_SCHEDULE) assert.equal(s.sweepTo, undefined, `glide in ${s.phase}`);
+  for (const s of handshake.filter((x) => x.kind === 'tone')) assert.equal(s.am, undefined, `warble in ${s.phase}`);
+  // Every FSK stream uses exactly two fixed frequencies.
+  for (const s of handshake.filter((x) => x.signal?.type === 'fsk')) assert.equal(new Set(s.signal.freqs).size, 2);
 });
 
-test('modem: 5 to 5.5 seconds long, ends cleanly, every segment playable', () => {
-  assert.ok(MODEM_DURATION >= 5 && MODEM_DURATION <= 5.5, String(MODEM_DURATION));
-  // The phases before the handshake keep their Stage 5 timing.
-  const answer = MODEM_SCHEDULE.find((s) => s.phase === 'answer');
-  assert.ok(Math.abs(answer.start + answer.duration - 2.575) < 1e-9);
-  assert.equal(MODEM_DURATION, scheduleEnd(buildModemSchedule()));
-  for (const s of MODEM_SCHEDULE) assert.deepEqual(segmentProblems(s), [], JSON.stringify(s));
-  // Whatever is still sounding at the very end fades out (no cut-off click).
-  const last = MODEM_SCHEDULE.filter((s) => Math.abs(s.start + s.duration - MODEM_DURATION) < 1e-9);
-  assert.ok(last.length > 0 && last.every((s) => s.release >= MODEM.handshake.release));
+test('modem: every segment playable, and the call ends with a fade, not a cut', () => {
+  for (const s of MODEM_SCHEDULE) assert.deepEqual(segmentProblems(s), [], JSON.stringify(s).slice(0, 200));
+  const last = MODEM_SCHEDULE.filter((s) => near(s.start + s.duration, MODEM_DURATION));
+  assert.ok(last.length > 0 && last.every((s) => s.release >= 0.1));
 });
 
 test('schedule helpers: overlap, end, and problems', () => {
@@ -304,10 +429,10 @@ test('transition: the modem plus the READY moment with sound on; 4000 ms, READY 
   assert.deepEqual(off, { readyAtMs: 4000 - 900, durationMs: 4000 });
   const on = transitionTiming(true, screens);
   // READY appears as the call ends (never over it), then the READY moment.
-  assert.equal(on.readyAtMs, 5575);
+  assert.equal(on.readyAtMs, 5765);
   assert.ok(on.readyAtMs >= (MODEM_LEAD_IN + MODEM_DURATION) * 1000 - 1e-6);
   assert.equal(on.durationMs, on.readyAtMs + SCREENS.bankReadyMs);
-  assert.equal(on.durationMs, 6475);
+  assert.equal(on.durationMs, 6665);
   // The skip rule is unchanged, and skipping is possible well before the end.
   assert.equal(SCREENS.bankTransitionSkipAfterMs, 750);
   assert.ok(SCREENS.bankSkipReadyMs > 0 && SCREENS.bankSkipReadyMs < SCREENS.bankReadyMs);

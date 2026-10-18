@@ -13,7 +13,8 @@
  *
  * Modules:
  *   schedule.js  sound as data (pure)        modem.js  the dial-in (pure)
- *   sfx.js       effect table (pure)         music.js  playlist and loop rules (pure)
+ *   signals.js   computed waveforms (pure)   music.js  playlist and loop rules (pure)
+ *   sfx.js       effect table (pure)
  *   context.js   AudioContext, unlock, mixer, audio session
  *   synth.js     plays schedules             player.js plays music buffers
  *
@@ -25,9 +26,9 @@
  */
 
 import { createAudioOutput, MIX } from './context.js';
-import { playSchedule } from './synth.js';
+import { playSchedule, prepareSignals } from './synth.js';
 import { buildEffect, effectForEvent, EFFECTS } from './sfx.js';
-import { MODEM_LEAD_IN, transitionTiming } from './modem.js';
+import { MODEM_LEAD_IN, MODEM_SCHEDULE, transitionTiming } from './modem.js';
 import { TRACKS, musicTarget } from './music.js';
 import { createMusicPlayer, MUSIC_FADES } from './player.js';
 
@@ -88,6 +89,7 @@ export function createAudio({
   let busy = null;
   /** Audio-clock time the current music duck lasts until. */
   let duckUntil = 0;
+  let prepared = false;
 
   function sounding(voice) {
     const ctx = output.get();
@@ -144,9 +146,23 @@ export function createAudio({
     player.apply(musicTarget({ screen, musicOn: musicOn(), bank, count: tracks.length }));
   }
 
+  /**
+   * Render the modem's computed signals once (js/audio/signals.js), in a
+   * later task: tens of milliseconds of work that should neither delay the
+   * tap that unlocked audio nor stall the first bank transition. If the
+   * modem plays first, the synth renders them on the spot instead.
+   */
+  function prepareSoon() {
+    const ctx = output.get();
+    if (prepared || !ctx || typeof win.setTimeout !== 'function') return;
+    prepared = true;
+    win.setTimeout(() => prepareSignals(ctx, MODEM_SCHEDULE), 0);
+  }
+
   function unlock() {
     if (!musicOn() && !sfxOn()) return; // no need for an AudioContext at all
     if (output.unlock()) updateMusic();
+    prepareSoon();
   }
 
   /** Hang up a modem call still in progress (the player skipped it or paused). */

@@ -3,7 +3,8 @@
  *
  * Every synthesized sound (the modem sequence and each effect) is described
  * as a list of segments: plain objects with a start time, a duration, and
- * what to play (tones or filtered noise). Nothing here touches Web Audio,
+ * what to play (tones, filtered noise, or a sample-exact signal from
+ * js/audio/signals.js). Nothing here touches Web Audio,
  * so schedules can be built and checked in Node; js/audio/synth.js turns
  * them into oscillators and filters.
  *
@@ -30,6 +31,10 @@
  * @property {number} release Seconds of fade-out (avoids a click at the end).
  * @property {{rate: number, depth: number}} [am] Amplitude wobble (Hz, 0..1).
  * @property {string} [digit] The key a DTMF tone stands for (for reading and tests).
+ * @property {number[]} [levels] Relative level per freq (instead of sharing
+ *   the gain equally): each oscillator plays at gain x its level.
+ * @property {[number, number]} [band] Hz: play through a phone-line band
+ *   limit (see synth.js).
  */
 
 /**
@@ -42,9 +47,23 @@
  * @property {number} gain
  * @property {number} attack
  * @property {number} release
+ * @property {[number, number]} [band]
  */
 
-/** @typedef {ToneSegment | NoiseSegment} Segment */
+/**
+ * @typedef {object} SignalSegment Samples computed in code (js/audio/signals.js).
+ * @property {'signal'} kind
+ * @property {string} [phase]
+ * @property {number} start
+ * @property {number} duration Equal to the signal's own duration.
+ * @property {import('./signals.js').Signal} signal
+ * @property {number} gain
+ * @property {number} attack
+ * @property {number} release
+ * @property {[number, number]} [band]
+ */
+
+/** @typedef {ToneSegment | NoiseSegment | SignalSegment} Segment */
 
 /** Default fades: long enough to avoid clicks, short enough to stay crisp. */
 const EDGE = 0.005;
@@ -85,6 +104,26 @@ export function noise(start, duration, filter, options = {}) {
     start,
     duration,
     filter,
+    gain: 0.3,
+    attack: EDGE,
+    release: EDGE,
+    ...options,
+  };
+}
+
+/**
+ * A segment that plays a computed signal for its whole length.
+ * @param {number} start
+ * @param {import('./signals.js').Signal} sig
+ * @param {Partial<SignalSegment>} [options]
+ * @returns {SignalSegment}
+ */
+export function signal(start, sig, options = {}) {
+  return {
+    kind: 'signal',
+    start,
+    duration: sig.duration,
+    signal: sig,
     gain: 0.3,
     attack: EDGE,
     release: EDGE,
@@ -140,10 +179,16 @@ export function segmentProblems(s) {
     if (s.sweepTo && (s.sweepTo.length !== s.freqs.length || !s.sweepTo.every((f) => f > 0))) {
       problems.push('sweepTo must match freqs');
     }
+    if (s.levels && (s.levels.length !== s.freqs.length || !s.levels.every((l) => l > 0 && l <= 1))) {
+      problems.push('levels must match freqs');
+    }
   } else if (s.kind === 'noise') {
     if (!(s.filter.freq > 0 && s.filter.q > 0)) problems.push('bad filter');
+  } else if (s.kind === 'signal') {
+    if (!s.signal || Math.abs(s.signal.duration - s.duration) > 1e-9) problems.push('signal must last the segment');
   } else {
     problems.push(`unknown kind ${s.kind}`);
   }
+  if (s.band && !(s.band[0] > 0 && s.band[1] > s.band[0])) problems.push('bad band');
   return problems;
 }

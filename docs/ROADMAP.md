@@ -33,6 +33,11 @@
   V5, W5, F5, F5m never dealt; banks 4 and 5 rebalanced); louder reward
   sounds with an octave voice, a music duck under them, and sound effects
   in the `?debug=1` log.
+- [x] **Playtest pass 3 (0.5.4).** The answer tone and handshake rebuilt
+  from a V.34-era reference recording, by way of the owner's approved
+  prototype: answer tone with phase-reversal clicks, FSK exchange, INFO
+  bursts, line-probe chords, and the training hiss, band-limited like a
+  phone line. The call is 5.465 s; READY at 5765 ms.
 - [ ] **6 - Era themes and DIM8 branding.** Era themes (with their own bank
   tints) and logo options, added to the settings screen.
 - [ ] **7 - PWA polish.** Offline caching (including music), icons, iPhone

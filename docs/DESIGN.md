@@ -163,7 +163,7 @@ in for the hard tier's removed pieces.
   | When the modem finishes: the READY moment, 900 ms | `MEMORY BANK 0x02 READY_` and, if chips were cashed in, the tally `CHIPS 0x03 = +0x0600` |
 
   With sound effects on, the modem dial-in plays (see [Audio](#audio)) and
-  READY appears as it ends: 5575 ms in, 6475 ms in all. With sound effects
+  READY appears as it ends: 5765 ms in, 6665 ms in all. With sound effects
   off the transition lasts 4000 ms, READY (at 3100 ms) included, because
   the moment to get ready matters with or without sound. A tap or key
   press skips the swap, but only after the first 750 ms, so the tap that
@@ -430,30 +430,46 @@ table, `EFFECTS` in `js/audio/sfx.js` (the modem's phase timings in
 ### Modem dial-in (bank complete)
 
 The music fades out (0.25 s), then after a 0.3 s lead-in the machine
-"dials up" the next bank, about 5.3 s in all:
+"dials up" the next bank, about 5.5 s in all:
 
 | Phase | Starts | Length | Imitates |
 | --- | --- | --- | --- |
 | Dial tone | 0.000 s | 0.45 s | Off-hook dial tone, 350 + 440 Hz |
 | Dialling | 0.570 s | 0.585 s | DTMF digits 3-4-6-8 ("DIM8" on a keypad): 90 ms tones, 75 ms gaps, standard pairs (3 = 697 + 1477, 4 = 770 + 1209, 6 = 770 + 1477, 8 = 852 + 1336 Hz) |
 | Ringback | 1.355 s | 0.5 s | One ring heard by the caller, 440 + 480 Hz |
-| Answer tone | 1.975 s | 0.6 s | The answering modem, 2100 Hz with a slight 15 Hz wobble |
-| Handshake: carrier exchange | 2.575 s | 0.5 s | Both carriers steady (1200 + 2400 Hz), then a burst of FSK flipping between two fixed pairs |
-| Handshake: scrambled data | 3.075 s | 1.2 s | The screech: Stage 5's burst (band-passed noise at 1800, 1200, 2400 Hz over a steady 1800 Hz carrier), then the same bands chopped into stuttering bursts with level jumps and hard switches between bands |
-| Handshake: training hiss | 4.275 s | 0.7 s | Broader, smoother noise over both carriers held faintly, the modems settling on a speed |
-| Handshake: settle | 4.975 s | 0.3 s | A near-silent hush, the "connected" moment; fades out at 5.275 s |
+| Answer tone | 1.975 s | 0.95 s | The answering modem: a steady 2100 Hz tone with a slight 15 Hz wobble in loudness. Twice (at 0.45 and 0.90 s into it) the wave flips over, which you hear as a click. In its last 0.35 s the calling modem starts warbling faintly underneath (980/1180 Hz) |
+| FSK exchange | 2.925 s | 0.65 s | Both modems chirping data at each other: the answerer switching between 1650 and 1850 Hz 300 times a second (with a bright overtone an octave up), the caller between 980 and 1180 Hz underneath |
+| Gap | 3.575 s | 0.04 s | Silence |
+| INFO burst | 3.615 s | 0.12 s | Three steady tones together: 1200, 2400, and 3600 Hz |
+| Line probe | 3.735 s | 0.3 s | A dense chord: every multiple of 150 Hz up to 3750 except 900, 1200, 1800, and 2400, brightest around 3300-3600 Hz; it drops 6 dB halfway. The modems measuring the line |
+| INFO burst | 4.035 s | 0.09 s | The same three tones, shorter |
+| Line probe | 4.125 s | 0.3 s | The same chord again |
+| Tone and noise | 4.425 s | 0.22 s | A 2400 Hz tone over shaped noise |
+| Gap | 4.645 s | 0.07 s | Silence |
+| Training hiss | 4.715 s | 0.75 s | The familiar hiss: noise with the spectrum of the real thing (peaks near 1450, 2050, and 3450 Hz), fading out over its last 0.12 s. Then the speaker cuts out: connected, at 5.465 s |
 
-**No pitch movement in the handshake.** No glides, sweeps, vibrato, or
-warble on any handshake tone: real modems hold fixed carrier
-frequencies, and the harshness comes from noise bursts and abrupt on/off
-and level changes. Pass 1 gave the scrambled data a drifting, warbling
-carrier, and on the phone it sounded like a cartoon spaceship; pass 2
-rebuilt the handshake from the Stage 5 one (which sounded right but
-lasted only 0.96 s), and a test checks the rule.
+From the answer tone on, the whole sound is band-limited to 250-3900 Hz,
+like a phone line.
+
+**Modelled on a real handshake.** Earlier versions built the handshake
+mostly from noise and never quite sounded like a modem. The recognisable
+sound is mostly tones: the answer tone with its clicks, overlapping FSK,
+the multi-tone probe chords, and only then the hiss. Pass 3 (0.5.4)
+models every phase, frequency, timing, and relative level on a V.34-era
+modem handshake, taken from a reference recording that is kept locally in
+`assets/audio-reference/` (gitignored, never shipped, not CC0), by way of
+a synthesized prototype the owner approved by ear. Everything the game
+plays is still synthesized in code.
+
+**Frequencies switch but never sweep.** The FSK jumps between its two
+frequencies, but nothing in the handshake glides, slides, or warbles in
+pitch. Pass 1 gave the screech a drifting carrier and on the phone it
+sounded like a cartoon spaceship; a test checks the rule. (The answer
+tone's wobble is in loudness, not pitch, as on real answer tones.)
 
 Times are from the first dial tone. The number is not a real phone
-number. READY appears at lead-in + sequence = 5575 ms; the transition
-lasts that plus the 900 ms READY moment, 6475 ms.
+number. READY appears at lead-in + sequence = 5765 ms; the transition
+lasts that plus the 900 ms READY moment, 6665 ms.
 
 ### Music
 

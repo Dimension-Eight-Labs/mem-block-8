@@ -134,7 +134,7 @@ test('transition timing follows the sound effects setting', () => {
   const screens = { silentMs: 4000, readyMs: 900 };
   assert.deepEqual(setup({ sfx: 'off' }).audio.transitionTiming(screens), { readyAtMs: 3100, durationMs: 4000 });
   const on = setup().audio.transitionTiming(screens);
-  assert.equal(on.readyAtMs, 5575);
+  assert.equal(on.readyAtMs, 5765);
   assert.ok(Math.abs(on.readyAtMs - (MODEM_LEAD_IN + MODEM_DURATION) * 1000) < 1);
   assert.equal(on.durationMs, on.readyAtMs + 900);
 });

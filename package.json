@@ -1,6 +1,6 @@
 {
   "name": "mem-block-8",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "description": "Mem Block 8 - an offline falling-block memory game from DIM8 Labs.",
   "type": "module",

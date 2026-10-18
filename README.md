@@ -6,9 +6,11 @@ memory and vintage computing. Blocks of memory drop into a 12 x 22 well; fill
 rows to clear them. Built as an installable Progressive Web App for iPhone
 Safari (Add to Home Screen) and desktop browsers.
 
-> Status: 0.5.3 after Stage 5 - playtest pass 2 (the Stage 5 modem
-> screech restored, a curated piece pool, louder reward sounds with a
-> music duck), then a workaround for the iOS 27 status bar blur. See [docs/ROADMAP.md](docs/ROADMAP.md).
+> Status: 0.5.4 after Stage 5 - playtest pass 3: the modem handshake
+> rebuilt from a real V.34-era handshake (answer tone clicks, FSK, probe
+> chords, training hiss). Before that: a curated piece pool, louder reward
+> sounds with a music duck, and a workaround for the iOS 27 status bar
+> blur. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Principles
 
@@ -122,8 +124,9 @@ Details: [docs/DESIGN.md](docs/DESIGN.md#memory-banks-levels).
   bright beep arpeggio when you earn chips (the longest for a FULL WORD),
   blips and a "done" tone as chips are tallied, a busy signal at game over
   ("NO CARRIER"), and a dial-up modem calling the next memory bank (DTMF
-  "DIM8", ringing, answer tone, then a handshake that runs from carrier
-  tones through the screech to a hush). The swap lasts as long as the
+  "DIM8", ringing, the answer tone with its two clicks, then the
+  handshake: FSK chirping, probe chords, and the training hiss, modelled on
+  a real V.34-era modem). The swap lasts as long as the
   call; tap to skip (the modem hangs up).
 - Music plays during play only, a different CC0 track for each memory
   bank, and loops seamlessly. It pauses with the game.

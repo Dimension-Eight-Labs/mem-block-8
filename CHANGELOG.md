@@ -4,6 +4,93 @@
 Every stage, and every significant change between stages, adds an entry
 here (see CONTRIBUTING.md).
 
+## Playtest pass 3 - modem handshake from a real modem reference
+
+Version 0.5.4 (`CACHE_VERSION` `v0.5.4`; music unchanged, `music-v2`).
+
+### Why
+
+Earlier handshakes were built mostly from noise and never sounded quite
+like a modem. The recognisable sound is mostly tones. The owner measured
+a real V.34-era US Robotics handshake and built a numpy prototype from
+it, approved by ear. Both are kept locally in `assets/audio-reference/`
+(gitignored; the recording is not CC0 and is never shipped).
+
+### Changed
+
+- **Answer tone and handshake** now follow the prototype's phases,
+  timings, frequencies, and relative levels, in Web Audio:
+  - answer (0.95 s): 2100 Hz with a weak 2nd harmonic, a 15 Hz wobble at
+    20%, and phase reversals at 0.45 and 0.90 s; the caller's faint
+    980/1180 Hz FSK for its last 0.35 s;
+  - FSK exchange (0.65 s): 1650/1850 Hz at 300 baud with a strong 2nd
+    harmonic, over 980/1180 Hz, from seeded bits;
+  - gap (40 ms), INFO bursts (1200 + 2400 + 3600 Hz), two line-probe
+    chords (multiples of 150 Hz to 3750, without 900/1200/1800/2400,
+    levels from `PROBE_GAIN_DB`, 6 dB drop halfway), 2400 Hz over shaped
+    noise, gap (70 ms), and the 0.75 s training hiss (`HISS_DB`
+    spectrum, 0.12 s fade);
+  - all of it band-limited to 250-3900 Hz.
+- Dial tone, DTMF 3-4-6-8, and ringback are unchanged. The call is now
+  5.465 s (was 5.275); READY at 5765 ms, transition 6665 ms. The 750 ms
+  skip rule and the hang-up click are unchanged.
+- **The pitch rule** now reads: frequencies may switch abruptly (FSK) but
+  never sweep.
+- **Level:** the handshake sits in the mix with the answer tone about
+  2 dB above the dial tone (RMS), where earlier versions had it. The
+  phases keep the prototype's levels relative to each other.
+
+### How it is built
+
+- New pure module `js/audio/signals.js` computes the answer tone, FSK, the
+  probe chord, and shaped noise sample by sample, from seeds (the engine's
+  seeded generator). Why it computes them rather than using oscillators:
+  - an oscillator's phase cannot be flipped, so the reversals would not
+    be exact;
+  - accumulating phase per sample makes every FSK switch
+    phase-continuous;
+  - oscillators start at phase 0, so the probe partials would line up
+    into a spike;
+  - biquads cannot follow the hiss's measured spectrum.
+
+  The INFO bursts and the 2400 Hz tone stay oscillators (new per-tone
+  `levels`).
+- `synth.js` plays `signal` segments from AudioBuffers made once per
+  context, and routes `band` segments through one shared 4th-order
+  Butterworth high-pass + low-pass chain per sound, so the filter runs
+  across the joins like a real line.
+- `index.js` renders the signals once, in a task just after the first
+  unlock (about 50 ms in Firefox), so neither the tap nor the first bank
+  transition stalls.
+- `modem.js` exports `HANDSHAKE`, `PROBE_GAIN_DB`, `HISS_DB`,
+  `MODEM_HANDSHAKE_PHASES`, and `MODEM_TIMELINE` (spans, gaps included);
+  `MODEM_HANDSHAKE_PARTS` is gone. `signals.js` is added to `APP_SHELL`.
+
+### Verified against the prototype
+
+The modem was rendered through the real synth (OfflineAudioContext,
+headless Firefox, 44.1 kHz) and compared with `prototype-handshake.wav`:
+- every phase boundary within 2 ms, and both phase reversals exact;
+- the dominant frequencies of each phase match;
+- each phase's loudness relative to the answer tone is within 1.1 dB
+  (training hiss +1.1 dB, all others within 0.4 dB).
+
+### Tests
+
+The modem tests were rewritten (306 tests in all). They check:
+- phase order (gaps included) and durations, and the unchanged dial-in;
+- on the rendered samples:
+  - the answer tone's reversal times, 15 Hz rate and 20% depth;
+  - the FSK frequencies, decoded bit by bit against the seeded bits at
+    300 baud;
+  - no clicks;
+  - the probe set, its skipped frequencies and its 6 dB drop;
+  - the hiss spectrum's peaks;
+- seeded determinism;
+- the band limit on every handshake segment and none before it;
+- no sweeps anywhere;
+- READY at 5765 ms.
+
 ## 0.5.3 - iOS 27 status bar blur workaround
 
 Version 0.5.3 (`CACHE_VERSION` `v0.5.3`).

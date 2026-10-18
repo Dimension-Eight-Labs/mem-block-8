@@ -51,7 +51,7 @@
  *   - Or bump CACHE_VERSION locally.
  */
 
-const CACHE_VERSION = 'v0.5.3';
+const CACHE_VERSION = 'v0.5.4';
 const CACHE_NAME = `mem-block-8-${CACHE_VERSION}`;
 
 /**
@@ -74,6 +74,7 @@ const APP_SHELL = [
   './js/audio/music.js',
   './js/audio/player.js',
   './js/audio/schedule.js',
+  './js/audio/signals.js',
   './js/audio/sfx.js',
   './js/audio/synth.js',
   './js/engine/board.js',

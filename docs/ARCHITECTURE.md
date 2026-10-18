@@ -345,12 +345,13 @@ settings, and the session applies them (`game.setWeights`,
 
 | File | Pure? | Contents |
 | --- | --- | --- |
-| `schedule.js` | Yes | Sound as data: tone and noise segments with start, duration, frequencies or filter, gain, envelope; helpers and checks |
-| `modem.js` | Yes | DTMF table, `MODEM` timing table (the handshake in four parts, `MODEM_HANDSHAKE_PARTS`), `MODEM_SCHEDULE`, `MODEM_DURATION`, `transitionTiming(modemOn, { silentMs, readyMs })` |
+| `schedule.js` | Yes | Sound as data: tone, noise, and signal segments with start, duration, frequencies, filter, or signal, gain, envelope, optional per-tone levels and phone-line band; helpers and checks |
+| `signals.js` | Yes | Waveforms computed sample by sample, from seeds: the answer tone (exact phase reversals), FSK (phase-continuous switching, `fskBits`), the line-probe chord (`probeFreqs`), and spectrum-shaped noise; cached per sample rate |
+| `modem.js` | Yes | DTMF table, `MODEM` timing table and `HANDSHAKE` (the prototype's phases and levels, `PROBE_GAIN_DB`, `HISS_DB`), `MODEM_PHASES`, `MODEM_TIMELINE` (phase spans, gaps included), `MODEM_SCHEDULE`, `MODEM_DURATION`, `transitionTiming(modemOn, { silentMs, readyMs })` |
 | `sfx.js` | Yes | `EVENT_EFFECTS` (event -> effect), `EFFECTS` (THE tuning table: volumes, times, frequencies), `buildEffect` |
 | `music.js` | Yes | `TRACKS` (playlist), `trackForBank`, `musicTarget`, `tracksToKeep`, `loopPoints` |
 | `context.js` | Web Audio | AudioContext creation and unlock, audio session type, mixer (`MIX`), visibility suspend/resume |
-| `synth.js` | Web Audio | `playSchedule(ctx, destination, segments, when)`: oscillators, filtered noise, envelopes; returns a voice that can be stopped |
+| `synth.js` | Web Audio | `playSchedule(ctx, destination, segments, when)`: oscillators, filtered noise, signal buffers, envelopes, and one shared 250-3900 Hz band chain per sound; returns a voice that can be stopped. `prepareSignals` turns signals into AudioBuffers ahead of time (`index.js` does it just after the first unlock) |
 | `player.js` | Web Audio | The music player: fetch, decode, loop, pause/resume, fades, memory |
 | `index.js` | Glue | `createAudio({ settings, onSound })`: `onEvent` (the session hook), `unlock`, `setHidden`, `transitionTiming`; the music duck under rewards; `onSound` reports every effect asked to play (the `?debug=1` log) |
 
